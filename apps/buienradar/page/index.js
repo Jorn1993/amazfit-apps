@@ -3,7 +3,6 @@ import {setScrollMode, SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
 import TransferFile from '@zos/ble/TransferFile';
 import {LocalStorage} from '@zos/storage';
 import {push} from '@zos/router';
-import {Time} from '@zos/sensor';
 import {set as setAlarm, cancel as cancelAlarm} from '@zos/alarm';
 import {BasePage} from '@zeppos/zml/base-page';
 
@@ -42,7 +41,7 @@ Page(BasePage({
   this.frameIndex=0;this.pendingFrame=null;this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
-  this.lastAlertKey=null;this.watchTime=new Time();this.lastClock='';
+  this.lastAlertKey=null;
   try{
    const saved=JSON.parse(storage.getItem('buienradar.radar-frames.v1')||'null');
    const time=Date.parse(saved&&saved.generatedAt);
@@ -80,12 +79,10 @@ Page(BasePage({
   this.radarWidget=create(0,ui.widget.IMG,{
    x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true,auto_scale_obj_fit:true
   });
-  // Circular safe zone: unobtrusive city pill plus watch time on the radar.
-  rect(0,157,25,166,48,0x081e2c,22);
-  this.city=txt(0,163,30,154,38,'Antwerpen',24,C.white);
-  rect(0,64,115,118,42,0x081e2c,18);
-  this.radarClock=txt(0,70,118,106,36,'--:--',27,C.white);
-  this.updateRadarClock();
+  // Official GIF frame time is re-positioned inside the radar PNG itself.
+  // Do not label current watch time as the radar frame timestamp.
+  rect(0,147,25,186,47,0x091d2b,22);
+  this.city=txt(0,154,29,172,40,'Antwerpen',25,C.white);
   // Outline-only yellow square, not a yellow dot covering precipitation pixels.
   this.markerPieces=[
    rect(0,0,0,21,3,0xffd54d),rect(0,0,0,21,3,0xffd54d),
@@ -155,7 +152,7 @@ Page(BasePage({
   this.lastConfigSignature=String(storage.getItem('buienradar.location')||'')+'|'+
    String(storage.getItem('buienradar.alert')||'');
   this.frameTimer=setInterval(()=>{
-   if(this.screen===0){this.nextRadarFrame();this.updateRadarClock();}
+   if(this.screen===0)this.nextRadarFrame();
    if(++this.configTick%12===0)this.checkConfig();
   },950);
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
@@ -279,7 +276,8 @@ Page(BasePage({
   if(this.disposed)return;
   const d=this.rain||EMPTY;
   if(!forecastFresh(d)){
-   this.scheduleRainAlert(EMPTY); // cancel stale scheduled rain notifications
+   this.scheduleRainAlert(EMPTY);
+   try{storage.setItem('buienradar.overview.v3','');}catch(_){}
    this.rainState.setProperty(ui.prop.TEXT,'GEEN RECENTE DATA');
    this.rainDetail.setProperty(ui.prop.TEXT,'Open de app opnieuw');
    this.temp.setProperty(ui.prop.TEXT,'--°');
@@ -319,8 +317,13 @@ Page(BasePage({
  storeShortcut(d){
   try{
    if(!forecastFresh(d))return;
-   storage.setItem('buienradar.forecast.v2',JSON.stringify({
-    at:d.updatedAt,location:d.location.name,summary120:d.summary2h
+   const w=d.station||{};
+   storage.setItem('buienradar.overview.v3',JSON.stringify({
+    at:d.updatedAt,location:d.location.name,summary120:d.summary2h,
+    points:d.points.slice(0,24).map(p=>({mmh:p.mmh})),
+    temperature:valid(w.temperature)?w.temperature:null,
+    windKmh:valid(w.windKmh)?w.windKmh:null,
+    direction:w.direction||null
    }));
   }catch(_){}
  },
@@ -347,7 +350,7 @@ Page(BasePage({
   this.lastConfigSignature=key;
   this.lastAlertKey=null;
   // Prevent the full-screen widget from showing weather from a previous city.
-  storage.setItem('buienradar.forecast.v2','');
+  storage.setItem('buienradar.overview.v3','');
   try{
    const loc=JSON.parse(storage.getItem('buienradar.location')||'null');
    if(loc&&loc.name){this.location=loc;
@@ -374,20 +377,20 @@ Page(BasePage({
  },
  placeMarker(){
   if(!this.markerPieces||!this.location)return;
-  // Approximate Belgium-wide placement referenced to the Antwerp landmark.
-  // These are UI coordinates, not an official georeferenced map transform.
+  // Belgium raster is not supplied with an official geo-affine transform.
+  // These points are a visually corrected, indicative map calibration.
+  // Do NOT display this as exact GPS positioning.
   const loc=this.location;
-  const px=Math.max(70,Math.min(399,217+(loc.lon-4.4025)*91));
-  const py=Math.max(88,Math.min(397,209-(loc.lat-51.2194)*100));
-  const factor=this.zoom||1;
-  const x=(factor===1?px:240+(px-px)*factor)-10;
-  const y=(factor===1?py:240+(py-py)*factor)-10;
-  const shapes=[[x,y,21,3],[x,y+18,21,3],[x,y,3,21],[x+18,y,3,21]];
-  shapes.forEach((coords,i)=>this.markerPieces[i].setProperty(ui.prop.MORE,{
-   x:Math.round(coords[0]),y:Math.round(coords[1]),w:coords[2],h:coords[3],
-   color:0xffd54d
-  }));
+  const px=Math.max(46,Math.min(434,264+(loc.lon-4.4025)*75));
+  const py=Math.max(63,Math.min(425,172-(loc.lat-51.2194)*102));
   this.markerX=px;this.markerY=py;
+  const x=this.zoom===1?px:240,y=this.zoom===1?py:240;
+  const left=Math.round(x-10),top=Math.round(y-10);
+  const shapes=[[left,top,21,3],[left,top+18,21,3],
+   [left,top,3,21],[left+18,top,3,21]];
+  shapes.forEach((v,i)=>this.markerPieces[i].setProperty(ui.prop.MORE,{
+   x:v[0],y:v[1],w:v[2],h:v[3],color:0xffd850
+  }));
  },
  changeZoom(direction){
   const steps=[1,1.3,1.6,2];
@@ -401,15 +404,6 @@ Page(BasePage({
    src:this.radarPaths[this.frameIndex]||this.radarPaths[0],auto_scale:true
   });
   this.placeMarker();
- },
- updateRadarClock(){
-   if(!this.radarClock||!this.watchTime)return;
-   const hours=String(this.watchTime.getHours()).padStart(2,'0');
-   const minutes=String(this.watchTime.getMinutes()).padStart(2,'0');
-   const clock=hours+':'+minutes;
-   if(this.lastClock!==clock){
-    this.lastClock=clock;this.radarClock.setProperty(ui.prop.TEXT,clock);
-   }
  },
  renderForecast(){
    const sum=forecastFresh(this.rain)?
