@@ -6,7 +6,7 @@ const CITIES=[
  ['Luik',50.6326,5.5797],['Amsterdam',52.3676,4.9041],
  ['Rotterdam',51.9244,4.4777],['Maastricht',50.8514,5.691]
 ];
-const VERSION='0.2.1';
+const VERSION='0.2.2';
 let name='',lat='',lon='';
 AppSettingsPage({
  build(props){

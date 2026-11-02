@@ -55,7 +55,7 @@ test('Radar request responds immediately, then reports completion after real tra
  const sim=start();try{
   const result=await sim.call('radar.refresh');
   assert.equal(result.ok,true);
-  assert.equal(result.stage,'starting');
+  assert.equal(result.stage,'download');
   assert.match(sim.getUrl(),/RadarMapRainBE/);
   await wait();
   const last=await sim.call('radar.status');

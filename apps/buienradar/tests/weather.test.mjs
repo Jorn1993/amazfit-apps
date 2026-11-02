@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {distanceKm,nearestStation,nextHourRain,RADAR_BE} from '../app-side/weather.js';
 const loc={lat:51.22,lon:4.4};
 test('Official radar endpoint is static-image Belgian variant, not a placeholder',()=>{
- assert.match(RADAR_BE,/image\.buienradar\.nl\/2\.0\/image\/single\/RadarMapRainWebmercatorBE/);
+ assert.match(RADAR_BE,/image\.buienradar\.nl\/2\.0\/image\/single\/RadarMapRainBE/);
  assert.match(RADAR_BE,/width=320/);
 });
 test('Next-hour forecast is derived only from first 12 real 5-minute buckets',()=>{

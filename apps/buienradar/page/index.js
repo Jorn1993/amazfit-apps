@@ -85,7 +85,7 @@ Page(BasePage({
     const load=()=>{
      if(this.disposed||!file.filePath)return;
      if(this.radarRequestId!==null&&file.params&&
-      file.params.requestId!==this.radarRequestId)return;
+      file.params.requestId!==undefined&&file.params.requestId!==this.radarRequestId)return;
      try{
       if(this.radarWidget){
        this.radarWidget.setProperty(ui.prop.MORE,{src:file.filePath});
