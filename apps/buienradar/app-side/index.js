@@ -6,7 +6,6 @@ const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
 const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
 let rainCache=null,weatherCache=null;
-let radarBusy=false,radarLastDelivered=0,radarTransfer=null;
 function responseBody(result){
  const b=result&&result.body;
  if(typeof b==='string')return b;
