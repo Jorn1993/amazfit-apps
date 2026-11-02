@@ -1,12 +1,42 @@
 # Buienradar — Amazfit Balance 2
 
-**Version 0.2.2 — unofficial Zepp OS 3 prototype.**
+**Version 0.3.0 — unofficial Zepp OS 3 prototype.**
+
+## Animated radar v0.3.0
+
+This edition replaces the static map with six real frames from Buienradar's
+**official Belgian animation** \`RadarMapRainWebmercatorBE\`, requested from
+the \`/2.0/image/animation/\` endpoint. A scheduled GitHub Actions job extracts
+the real GIF frames every 15 minutes and publishes a replaceable, validated
+PNG snapshot on the \`radar-cache\` branch.
+
+The latest six frames are also bundled into each developer installation, so
+the map **moves immediately** on opening without waiting for Bluetooth.
+While open, the watch requests a verified new sequence automatically. The
+Zepp phone service downloads and converts PNG frames, and the watch replaces
+the bundled sequence once at least two fresh frames have really arrived.
+
+**No manual GPS or refresh buttons.** The chosen location is read from
+Zepp's Buienradar Settings. The displayed map is currently the country-wide
+Belgian radar product, labelled with the chosen location, *not yet a
+location-centered zoom*. Never imply it is precisely centered on that place
+until a documented coordinate-aware map source is available.
+
+Frame caches can be delayed by the 15-minute refresh schedule and Bluetooth;
+the bundled fallback is marked as a preview until a fresh transfer.
+A failed download cannot make up fictitious frames. The Side Service uses
+Zepp's official PNG image converter, BLE file transfer, and both 'NEWFILE'
+and 'FILE' receiver events.
+
+This is a personal development prototype. Buienradar states that their data
+requires permission for mobile-app use. Obtain permission before distributing
+or listing it publicly.
 
 ## Three full-screen pages
 
 Swipe horizontally inside the app:
 
-1. **Radar** — official live Belgium radar image (Buienradar's RadarMapRainBE single-image endpoint). Zepp's phone-side app downloads it, converts it to device image format, and transfers it to the watch. No artificial placeholder image.
+1. **Radar** — official animated Belgium radar, six real frames with an immediately available bundled preview and automatic updates from Zepp.
 2. **Rain forecast** — enlarged 24 × five-minute precipitation graph, now marker, clear two-hour timeline and rain arrival text from official Buienradar data.
 3. **Next hour** — upcoming 60-minute rain total calculated from the 5-minute forecast, plus *current observed* temperature, wind and gusts from the nearest official Buienradar station. Observation station and distance are labelled explicitly; this is not a predicted next-hour temperature.
 
