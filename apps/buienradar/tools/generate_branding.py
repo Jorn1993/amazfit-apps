@@ -112,6 +112,15 @@ def draw_sun():
                          (91,37,104,24),(24,104,37,91)]:
         d.line((x0,y0,x1,y1),fill=YELLOW,width=7)
     return im
+def draw_moon():
+    im=new_canvas()
+    d=ImageDraw.Draw(im)
+    d.ellipse((25,18,105,108),fill=YELLOW)
+    d.ellipse((54,2,133,89),fill=(0,0,0,0))
+    d.ellipse((103,93,109,99),fill=YELLOW)
+    d.ellipse((17,104,23,110),fill=YELLOW)
+    return im
+
 def draw_rain():
     im=draw_cloud();d=ImageDraw.Draw(im)
     for x,y in [(46,102),(73,108),(100,100)]:
@@ -135,9 +144,10 @@ def main():
     official_logo()
     save("weather-cloud.png",draw_cloud())
     save("weather-sun.png",draw_sun())
+    save("weather-moon.png",draw_moon())
     save("weather-rain.png",draw_rain())
     save("weather-drop.png",draw_drop())
     save("weather-wind.png",draw_wind())
-    print("Generated authentic Buienradar logo + 5 UI weather glyphs")
+    print("Generated Buienradar icon + 6 UI weather glyphs")
 if __name__ == "__main__":
     main()

@@ -33,6 +33,27 @@ function amount(s,hours){
 const storage=new LocalStorage();
 function valid(n){return typeof n==='number'&&Number.isFinite(n);}
 function shown(n,unit){return valid(n)?Math.round(n)+unit:'--'+unit;}
+// Solar elevation, not a fixed 19:00 cutoff: Belgium can have daylight
+// well after 21:00 in summer and darkness in late afternoon in winter.
+function isNightAt(lat,lon,date=new Date()){
+ if(!valid(lat)||!valid(lon))return false;
+ const year=date.getUTCFullYear();
+ const first=Date.UTC(year,0,1),utc=date.getTime();
+ const day=Math.floor((utc-first)/86400000)+1;
+ const min=date.getUTCHours()*60+date.getUTCMinutes();
+ const gamma=2*Math.PI/365*(day-1+(min/60-12)/24);
+ const eq=229.18*(0.000075+0.001868*Math.cos(gamma)-
+  0.032077*Math.sin(gamma)-0.014615*Math.cos(2*gamma)-
+  0.040849*Math.sin(2*gamma));
+ const dec=0.006918-0.399912*Math.cos(gamma)+0.070257*Math.sin(gamma)-
+  0.006758*Math.cos(2*gamma)+0.000907*Math.sin(2*gamma)-
+  0.002697*Math.cos(3*gamma)+0.00148*Math.sin(3*gamma);
+ const hourAngle=(min+eq+4*lon)/4*Math.PI/180-Math.PI;
+ const latitude=lat*Math.PI/180;
+ const sinAlt=Math.sin(latitude)*Math.sin(dec)+
+  Math.cos(latitude)*Math.cos(dec)*Math.cos(hourAngle);
+ return sinAlt<Math.sin(-0.833*Math.PI/180);
+}
 Page(BasePage({
  build(){
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
@@ -316,7 +337,8 @@ Page(BasePage({
   if(/regen|bui|motregen|rain|drizzle|sneeuw/.test(description))
    src='weather-rain.png';
   else if(/zonnig|helder|sunny|clear/.test(description))
-   src='weather-sun.png';
+   src=isNightAt(this.location&&this.location.lat,
+    this.location&&this.location.lon)?'weather-moon.png':'weather-sun.png';
   this.weatherIcon.setProperty(ui.prop.MORE,{src,auto_scale:true});
  },
  storeShortcut(d){
