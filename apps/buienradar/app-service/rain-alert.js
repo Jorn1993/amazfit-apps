@@ -17,7 +17,11 @@ AppService({
    const content='Volgens de laatste voorspelling regen rond '+new Date(data.onsetAt).toLocaleTimeString('nl-BE',{
     hour:'2-digit',minute:'2-digit'
    })+' in '+String(data.place||'jouw buurt').slice(0,28);
-   notify({title:'Regen op komst',content,actions:[],vibrate:5});
+   const id=notify({
+    title:'Regen op komst',content,
+    actions:[{text:'Bekijk radar',file:'page/index'}],vibrate:5
+   });
+   if(id<=0)console.log('[Buienradar] notification rejected');
   }catch(_){}
  }
 });

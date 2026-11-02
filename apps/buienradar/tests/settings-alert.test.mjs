@@ -16,6 +16,7 @@ function watchSettings({connected=true}={}){
  vm.runInNewContext(code,{ui,Page:x=>page=x,BasePage:x=>x,
   back:()=>backCalls.push('back'),
   LocalStorage:class{getItem(k){return saved.get(k);}setItem(k,v){saved.set(k,v);}},
+  notify:()=>5,cancelAlarm:()=>0,
   JSON,Number,String,Math});
  page.messaging={request:async req=>{
   if(!connected)throw Error('offline');
@@ -75,4 +76,9 @@ test('Disabled and stale rain notices do not trigger an alert',()=>{
   plannedAt:now-3*3600000};
  assert.equal(alertService({enabled:false,lead:15},item).length,0);
  assert.equal(alertService({enabled:true,lead:15},item).length,0);
+});
+
+test('User can explicitly send a test notification without waiting for rainfall',()=>{
+ const w=watchSettings();w.page.testNotification();
+ assert.equal(w.page.status.values.text,'Test naar meldingen gestuurd');
 });

@@ -2,6 +2,8 @@ import * as ui from '@zos/ui';
 import {back} from '@zos/router';
 import {LocalStorage} from '@zos/storage';
 import {BasePage} from '@zeppos/zml/base-page';
+import {notify} from '@zos/notification';
+import {cancel as cancelAlarm} from '@zos/alarm';
 
 const cities=[
  {name:'Antwerpen',lat:51.2194,lon:4.4025},
@@ -51,8 +53,9 @@ Page(BasePage({
   this.leadText=label(124,337,232,40,alert.lead+' MIN VOORAF',23,white);
   button(70,332,53,53,'−',()=>this.changeLead(-1));
   button(357,332,53,53,'+',()=>this.changeLead(1));
-  this.status=label(95,389,290,25,'',16,muted);
-  button(149,411,182,47,'OPSLAAN',()=>void this.save(),true);
+  this.status=label(72,384,336,28,'',17,muted);
+  button(88,415,142,48,'TEST',()=>this.testNotification());
+  button(248,415,145,48,'OPSLAAN',()=>void this.save(),true);
  },
  pick(delta){
   this.selected=(this.selected+delta+cities.length)%cities.length;
@@ -70,6 +73,18 @@ Page(BasePage({
   this.alert.lead=choices[Math.max(0,Math.min(2,i+direction))];
   this.leadText.setProperty(ui.prop.TEXT,this.alert.lead+' MIN VOORAF');
  },
+ testNotification(){
+  try{
+   const id=notify({
+    title:'Buienradar · test',
+    content:'Meldingen van Buienradar zijn beschikbaar op dit horloge.',
+    actions:[{text:'Open radar',file:'page/index'}],
+    vibrate:5
+   });
+   this.status.setProperty(ui.prop.TEXT,id>0?
+    'Test naar meldingen gestuurd':'Melding geweigerd');
+  }catch(_){this.status.setProperty(ui.prop.TEXT,'Melding niet beschikbaar');}
+ },
  async save(){
   const selected=cities[this.selected];
   this.status.setProperty(ui.prop.TEXT,'Opslaan...');
@@ -80,6 +95,13 @@ Page(BasePage({
    if(!reply||reply.ok!==true)throw Error('Zepp niet verbonden');
    storage.setItem('buienradar.location',JSON.stringify(reply.location));
    storage.setItem('buienradar.alert',JSON.stringify(this.alert));
+   if(!this.alert.enabled){
+    const id=Number(storage.getItem('buienradar.alert-alarm-id')||0);
+    if(id>0){
+     try{cancelAlarm(id);}catch(_){}
+     storage.setItem('buienradar.alert-alarm-id','0');
+    }
+   }
    this.status.setProperty(ui.prop.TEXT,'Opgeslagen');
    back();
   }catch(_){

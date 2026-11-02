@@ -27,6 +27,11 @@ SecondaryWidget({
    align_h:ui.align.CENTER_H,text_style:ui.text_style.WRAP
   });
   add(ui.widget.FILL_RECT,{x:0,y:0,w:480,h:480,color:BG});
+  add(ui.widget.BUTTON,{
+   x:12,y:12,w:456,h:456,text:'',normal_color:BG,
+   press_color:0x112536,radius:42,
+   click_func:()=>push({url:'page/index'})
+  });
   // Always useful: bundled radar still visible when local nowcast is old.
   add(ui.widget.IMG,{
    x:0,y:0,w:480,h:480,src:'radar-frame-2.png',auto_scale:true
@@ -69,10 +74,5 @@ SecondaryWidget({
    txt(88,299,304,44,'Tik voor de nieuwste voorspelling',21,SECONDARY);
    txt(96,391,288,36,'RADAR · BELGIË',19,SECONDARY);
   }
-  add(ui.widget.BUTTON,{
-   x:12,y:12,w:456,h:456,text:'',normal_color:0x000000,
-   press_color:0x112536,radius:42,
-   click_func:()=>push({url:'page/index'})
-  });
  }
 });
