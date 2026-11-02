@@ -40,5 +40,6 @@ for(const dir of ['assets','assets/balance2']){
  fs.mkdirSync(dest,{recursive:true});
  fs.writeFileSync(path.join(dest,'icon.png'),render(256));
  fs.writeFileSync(path.join(dest,'preview.png'),render(480));
+ fs.writeFileSync(path.join(dest,'preview_nl-NL.png'),render(480));
 }
 console.log('Generated Buienradar rain-cloud icon');
