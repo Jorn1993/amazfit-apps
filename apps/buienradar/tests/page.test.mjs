@@ -82,7 +82,7 @@ test('Full-bleed radar is instant, covers 480x480 and contains no controls',asyn
  assert.equal(t.page.radarWidget.values.w,480);
  assert.equal(t.page.radarWidget.values.h,480);
  assert.equal(t.page.radarWidget.values.src,'radar-frame-0.png');
- assert.equal(t.page.parts[0].filter(x=>x.type===2).length,0);
+ assert.equal(t.page.parts[0].filter(x=>x.type===2).length,2,'only + / - zoom buttons');
  t.page.nextRadarFrame();assert.equal(t.page.radarWidget.values.more.src,'radar-frame-1.png');
  assert.equal(t.page.city.values.text,'Antwerpen');
  t.page.onDestroy();
