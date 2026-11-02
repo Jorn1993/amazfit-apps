@@ -1,0 +1,59 @@
+{
+  "configVersion": "v3",
+  "app": {
+    "appId": 1936821,
+    "appName": "Buienradar",
+    "appType": "app",
+    "version": {
+      "name": "0.1.0",
+      "code": 1
+    },
+    "vender": "Personal prototype",
+    "description": "Two-hour precipitation forecast powered by Buienradar",
+    "icon": "icon.png"
+  },
+  "permissions": [
+    "device:os.geolocation"
+  ],
+  "runtime": {
+    "apiVersion": {
+      "minVersion": "3.0",
+      "target": "3.0",
+      "compatible": "3.0"
+    }
+  },
+  "targets": {
+    "balance2": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        }
+      },
+      "platforms": [
+        {
+          "name": "Balance 2",
+          "deviceSource": 9568513
+        },
+        {
+          "name": "Balance 2",
+          "deviceSource": 9568515
+        }
+      ],
+      "designWidth": 480
+    }
+  },
+  "i18n": {
+    "nl-NL": {
+      "appName": "Buienradar"
+    }
+  },
+  "defaultLanguage": "nl-NL"
+}
