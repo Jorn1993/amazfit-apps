@@ -88,7 +88,7 @@ test('Full-bleed radar is instant, covers 480x480 and contains no controls',asyn
  assert.equal(t.page.parts[0].filter(x=>x.type===2).length,2,'only + / - zoom buttons');
  t.page.nextRadarFrame();assert.equal(t.page.radarWidget.values.more.src,'radar-frame-1.png');
  assert.equal(t.page.city.values.text,'Antwerpen');
- assert.equal(t.page.radarClock.values.text,'20:45');
+ assert.equal(t.page.radarClock,undefined,'radar time is burned into true source frame');
  t.page.onDestroy();
 });
 test('Actual BLE frames replace bundled animation only after 2 received',async()=>{

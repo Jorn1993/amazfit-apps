@@ -95,8 +95,9 @@ Page(BasePage({
    text:'−',text_size:31,color:C.white,normal_color:0x0b2332,
    press_color:0x1c4457,radius:20,click_func:()=>this.changeZoom(-1)});
   this.placeMarker();
-  // PAGE 2 — one dominant rain state and a direct 1h/2h switch.
-  txt(1,102,49,276,45,'REGEN',34,C.white);
+  // PAGE 2 — restrained editorial type and one continuous timeline.
+  txt(1,106,47,268,53,'REGEN',35,C.white);
+  rect(1,115,98,250,2,0x1d3c4f);
   this.horizon=2;
   this.horizonOne=create(1,ui.widget.BUTTON,{x:119,y:109,w:113,h:41,
     text:'1 UUR',text_size:18,color:C.white,normal_color:0x19384a,
@@ -104,8 +105,8 @@ Page(BasePage({
   this.horizonTwo=create(1,ui.widget.BUTTON,{x:246,y:109,w:113,h:41,
     text:'2 UUR',text_size:18,color:C.white,normal_color:0x286b8f,
     press_color:0x246789,radius:18,click_func:()=>this.setHorizon(2)});
-  this.rainState=txt(1,55,166,370,52,'Laden…',31,C.white);
-  this.rainDetail=txt(1,81,216,318,38,'',21,C.muted);
+  this.rainState=txt(1,53,166,374,57,'Laden…',33,C.white);
+  this.rainDetail=txt(1,81,220,318,36,'',22,C.muted);
   rect(1,62,365,358,2,C.line);
   for(let i=0;i<12;i++){
    rect(1,68+i*29,267,17,1,C.line);
@@ -121,24 +122,26 @@ Page(BasePage({
    txt(1,260,378,85,28,'60 min',18,C.muted),
    txt(1,353,378,70,28,'2 uur',18,C.muted)
   ];
-  // PAGE 3 — compact, visual information and much larger values.
-  this.detailTitle=txt(2,100,61,280,45,'WEER',34,C.white);
+  // PAGE 3 — restrained metrics with aligned soft cards and larger values.
+  rect(2,68,136,344,149,0x0d202e,31);
+  rect(2,76,295,328,74,0x0d202e,23);
+  rect(2,83,376,314,65,0x0d202e,23);
+  this.detailTitle=txt(2,100,53,280,55,'WEER',36,C.white);
   this.settingsButton=create(2,ui.widget.BUTTON,{x:373,y:81,w:58,h:49,
-    text:'⚙',text_size:30,color:C.white,normal_color:0x183044,
+    text:'⚙',text_size:29,color:C.white,normal_color:0x0d202e,
     press_color:0x28546b,radius:23,
     click_func:()=>push({url:'page/settings'})});
   this.weatherIcon=create(2,ui.widget.IMG,{
-   x:88,y:166,w:113,h:113,src:'weather-cloud.png',auto_scale:true
+   x:91,y:163,w:114,h:114,src:'weather-cloud.png',auto_scale:true
   });
-  this.temp=txt(2,211,167,178,98,'--°',62);
-  txt(2,208,247,191,30,'NU',19,C.muted);
-  rect(2,77,293,326,2,C.line);
-  create(2,ui.widget.IMG,{x:84,y:307,w:67,h:67,src:'weather-drop.png',auto_scale:true});
-  this.amount=txt(2,160,299,246,62,'-- mm',38,C.blue);
-  txt(2,201,351,185,27,'KOMEND UUR',18,C.muted);
-  create(2,ui.widget.IMG,{x:89,y:382,w:57,h:57,src:'weather-wind.png',auto_scale:true});
-  this.wind=txt(2,155,375,252,60,'-- km/u',29);
-  this.gusts=txt(2,151,419,255,36,'',21,C.muted);
+  this.temp=txt(2,208,151,183,93,'--°',68);
+  txt(2,215,239,168,29,'NU',20,C.muted);
+  create(2,ui.widget.IMG,{x:101,y:301,w:56,h:56,src:'weather-drop.png',auto_scale:true});
+  this.amount=txt(2,167,298,219,48,'-- mm',38,C.blue);
+  txt(2,178,341,208,29,'KOMEND UUR',18,C.muted);
+  create(2,ui.widget.IMG,{x:103,y:380,w:47,h:47,src:'weather-wind.png',auto_scale:true});
+  this.wind=txt(2,158,375,233,54,'-- km/u',29);
+  this.gusts=txt(2,162,424,230,31,'',19,C.muted);
   this.station=txt(2,118,462,244,18,'',12,C.muted);
   // Small page dots on every native page: these travel with the swipe.
   for(let i=0;i<3;i++){
