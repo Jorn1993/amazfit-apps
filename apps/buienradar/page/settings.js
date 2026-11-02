@@ -26,32 +26,33 @@ Page(BasePage({
    make(ui.widget.TEXT,{x,y,w,h,text:value,text_size:size,color,
     align_h:ui.align.CENTER_H,text_style:ui.text_style.WRAP});
   const button=(x,y,w,h,value,click,active=false)=>
-   make(ui.widget.BUTTON,{x,y,w,h,text:value,text_size:20,color:white,
-    normal_color:active?0x196d9e:0x152c3b,press_color:0x285779,
-    radius:19,click_func:click});
+   make(ui.widget.BUTTON,{x,y,w,h,text:value,text_size:22,color:white,
+    normal_color:active?0x176b99:0x182f3e,press_color:0x285779,
+    radius:20,click_func:click});
   make(ui.widget.FILL_RECT,{x:0,y:0,w:480,h:480,color:bg});
-  label(89,42,302,43,'INSTELLINGEN',29);
-  label(99,113,282,27,'LOCATIE',16,muted);
+  label(96,42,288,48,'INSTELLINGEN',30);
+  label(106,109,268,30,'LOCATIE',19,muted);
   let selected=cities[0];
   try{
    const l=JSON.parse(storage.getItem('buienradar.location')||'null');
    selected=cities.find(c=>c.name===l.name)||selected;
   }catch(_){}
   this.selected=cities.indexOf(selected);
-  this.place=label(119,149,245,51,selected.name,26);
-  button(67,150,55,49,'‹',()=>this.pick(-1));
-  button(365,150,55,49,'›',()=>this.pick(1));
-  label(100,229,280,29,'REGENMELDING',17,muted);
+  this.place=label(125,147,230,53,selected.name,29);
+  button(71,148,52,52,'‹',()=>this.pick(-1));
+  button(357,148,52,52,'›',()=>this.pick(1));
+  make(ui.widget.FILL_RECT,{x:88,y:218,w:304,h:2,color:0x293e4b});
+  label(91,236,298,33,'REGENMELDING',20,muted);
   let alert={enabled:false,lead:15};
   try{alert={...alert,...JSON.parse(storage.getItem('buienradar.alert')||'{}')};}catch(_){}
   this.alert=alert;
-  this.alertButton=button(112,266,256,50,alert.enabled?'AAN':'UIT',
+  this.alertButton=button(135,272,210,51,alert.enabled?'AAN':'UIT',
    ()=>this.toggleAlert(),alert.enabled);
-  this.leadText=label(90,337,300,36,'Meld '+alert.lead+' min vooraf',20,white);
-  button(54,337,65,46,'−',()=>this.changeLead(-1));
-  button(361,337,65,46,'+',()=>this.changeLead(1));
-  this.status=label(78,397,324,29,'',16,muted);
-  button(150,430,180,44,'OPSLAAN',()=>void this.save(),true);
+  this.leadText=label(124,337,232,40,alert.lead+' MIN VOORAF',23,white);
+  button(70,332,53,53,'−',()=>this.changeLead(-1));
+  button(357,332,53,53,'+',()=>this.changeLead(1));
+  this.status=label(95,389,290,25,'',16,muted);
+  button(149,411,182,47,'OPSLAAN',()=>void this.save(),true);
  },
  pick(delta){
   this.selected=(this.selected+delta+cities.length)%cities.length;
@@ -60,14 +61,14 @@ Page(BasePage({
  toggleAlert(){
   this.alert.enabled=!this.alert.enabled;
   this.alertButton.setProperty(ui.prop.MORE,{
-   x:112,y:266,w:256,h:50,text:this.alert.enabled?'AAN':'UIT',
-   normal_color:this.alert.enabled?0x196d9e:0x152c3b
+   x:135,y:272,w:210,h:51,text:this.alert.enabled?'AAN':'UIT',
+   normal_color:this.alert.enabled?0x176b99:0x182f3e
   });
  },
  changeLead(direction){
   const choices=[5,15,30],i=choices.indexOf(this.alert.lead);
   this.alert.lead=choices[Math.max(0,Math.min(2,i+direction))];
-  this.leadText.setProperty(ui.prop.TEXT,'Meld '+this.alert.lead+' min vooraf');
+  this.leadText.setProperty(ui.prop.TEXT,this.alert.lead+' MIN VOORAF');
  },
  async save(){
   const selected=cities[this.selected];

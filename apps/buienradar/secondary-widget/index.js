@@ -29,10 +29,15 @@ SecondaryWidget({
    x,y,w,h,text:value,text_size:size,color,
    align_h:ui.align.CENTER_H,text_style:ui.text_style.WRAP
   });
-  label(79,66,322,46,d?String(d.location):'Buienradar',29,BLUE);
-  label(43,159,394,68,sum?String(sum.headline):'OPEN BUIENRADAR',
-   sum?33:32);
-  label(79,263,322,77,sum?String(sum.detail):'Geen recente voorspelling',
-   24,MUTED);
+  let text='GEEN RECENTE DATA';
+  if(sum){
+   text=sum.state==='dry'?'DROOG':sum.state==='raining'?'HET REGENT':
+    'REGEN OVER '+sum.etaMinutes+' MIN';
+  }
+  const quantity=sum?sum.totalMm.toFixed(1).replace('.',',')+' mm · komende 2 uur':
+   'Open de app om te vernieuwen';
+  label(90,85,300,46,d?String(d.location):'Buienradar',31,BLUE);
+  label(36,167,408,76,text,32);
+  label(84,263,312,58,quantity,23,MUTED);
  }
 });
