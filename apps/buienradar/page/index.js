@@ -96,80 +96,82 @@ Page(BasePage({
    this.pageViews.push(view);
    rect(i,0,0,SIZE,SIZE,C.bg);
   }
-  // PAGE 1 — radar is genuinely full bleed, not inset in a square card.
+  // Design v0.8: a single scale, one typographic hierarchy, and safe
+  // content bounds inside a 480px circular watch (radius 240).
+  // PAGE 1 — full-screen animated radar. Only two compact controls.
   this.radarWidget=create(0,ui.widget.IMG,{
-   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true,auto_scale_obj_fit:true
+   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],
+   auto_scale:true,auto_scale_obj_fit:true
   });
-  // Official GIF frame time is re-positioned inside the radar PNG itself.
-  // Do not label current watch time as the radar frame timestamp.
-  rect(0,147,25,186,47,0x091d2b,22);
-  this.city=txt(0,154,29,172,40,'Antwerpen',25,C.white);
-  // Outline-only yellow square, not a yellow dot covering precipitation pixels.
+  rect(0,161,25,158,46,0x081c2a,23);
+  this.city=txt(0,168,30,144,36,'Antwerpen',24,C.white);
   this.markerPieces=[
-   rect(0,0,0,21,3,0xffd54d),rect(0,0,0,21,3,0xffd54d),
-   rect(0,0,0,3,21,0xffd54d),rect(0,0,0,3,21,0xffd54d)
+   rect(0,0,0,18,3,0xffd850),rect(0,0,0,18,3,0xffd850),
+   rect(0,0,0,3,18,0xffd850),rect(0,0,0,3,18,0xffd850)
   ];
-  this.zoomIn=create(0,ui.widget.BUTTON,{x:398,y:165,w:48,h:48,
-   text:'+',text_size:31,color:C.white,normal_color:0x0b2332,
-   press_color:0x1c4457,radius:20,click_func:()=>this.changeZoom(1)});
-  this.zoomOut=create(0,ui.widget.BUTTON,{x:398,y:223,w:48,h:48,
-   text:'−',text_size:31,color:C.white,normal_color:0x0b2332,
-   press_color:0x1c4457,radius:20,click_func:()=>this.changeZoom(-1)});
+  this.zoomIn=create(0,ui.widget.BUTTON,{x:397,y:166,w:48,h:48,
+   text:'+',text_size:30,color:C.white,normal_color:0x091e2d,
+   press_color:0x1b4c66,radius:23,click_func:()=>this.changeZoom(1)});
+  this.zoomOut=create(0,ui.widget.BUTTON,{x:397,y:224,w:48,h:48,
+   text:'−',text_size:30,color:C.white,normal_color:0x091e2d,
+   press_color:0x1b4c66,radius:23,click_func:()=>this.changeZoom(-1)});
   this.placeMarker();
-  // PAGE 2 — restrained editorial type and one continuous timeline.
-  txt(1,106,47,268,53,'REGEN',35,C.white);
-  rect(1,115,98,250,2,0x1d3c4f);
+
+  // PAGE 2 — one uncluttered focal point, controls at the same scale.
+  this.rainTitle=txt(1,149,51,182,44,'REGEN',35,C.white);
   this.horizon=2;
-  this.horizonOne=create(1,ui.widget.BUTTON,{x:119,y:109,w:113,h:41,
-    text:'1 UUR',text_size:18,color:C.white,normal_color:0x19384a,
-    press_color:0x246789,radius:18,click_func:()=>this.setHorizon(1)});
-  this.horizonTwo=create(1,ui.widget.BUTTON,{x:246,y:109,w:113,h:41,
-    text:'2 UUR',text_size:18,color:C.white,normal_color:0x286b8f,
-    press_color:0x246789,radius:18,click_func:()=>this.setHorizon(2)});
-  this.rainState=txt(1,53,166,374,57,'Laden…',33,C.white);
-  this.rainDetail=txt(1,81,220,318,36,'',22,C.muted);
-  rect(1,62,365,358,2,C.line);
-  for(let i=0;i<12;i++){
-   rect(1,68+i*29,267,17,1,C.line);
-   rect(1,68+i*29,314,17,1,C.line);
+  this.horizonOne=create(1,ui.widget.BUTTON,{x:113,y:111,w:122,h:47,
+   text:'1 UUR',text_size:20,color:C.white,normal_color:0x162e40,
+   press_color:0x1c4b67,radius:22,click_func:()=>this.setHorizon(1)});
+  this.horizonTwo=create(1,ui.widget.BUTTON,{x:245,y:111,w:122,h:47,
+   text:'2 UUR',text_size:20,color:C.white,normal_color:0x236b95,
+   press_color:0x205a79,radius:22,click_func:()=>this.setHorizon(2)});
+  this.rainState=txt(1,67,167,346,61,'LADEN…',38,C.white);
+  this.rainDetail=txt(1,100,227,280,38,'',23,C.muted);
+  rect(1,79,369,322,2,C.line);
+  for(let i=0;i<24;i++){
+   this.bars.push(rect(1,86+i*13,366,9,4,C.empty,3));
   }
-  for(let i=0;i<24;i++)this.bars.push(
-   rect(1,74+i*14,362,10,4,C.empty,3)
-  );
-  rect(1,66,246,3,122,C.orange);
   this.graphTicks=[
-   txt(1,57,378,75,28,'NU',18),
-   txt(1,152,378,82,28,'30 min',18,C.muted),
-   txt(1,260,378,85,28,'60 min',18,C.muted),
-   txt(1,353,378,70,28,'2 uur',18,C.muted)
+   txt(1,85,386,69,29,'NU',19,C.white),
+   txt(1,160,386,78,29,'30 min',18,C.muted),
+   txt(1,251,386,78,29,'60 min',18,C.muted),
+   txt(1,337,386,74,29,'2 uur',18,C.muted)
   ];
-  // PAGE 3 — restrained metrics with aligned soft cards and larger values.
-  // All three surfaces fit the circular crop, including lower corners.
-  rect(2,76,126,328,142,0x0e2332,29);
-  rect(2,87,279,306,72,0x0e2332,24);
-  rect(2,96,360,288,65,0x0e2332,23);
-  this.detailTitle=txt(2,100,53,280,55,'WEER',36,C.white);
-  this.settingsButton=create(2,ui.widget.BUTTON,{x:373,y:81,w:58,h:49,
-    text:'⚙',text_size:29,color:C.white,normal_color:0x0d202e,
-    press_color:0x28546b,radius:23,
-    click_func:()=>push({url:'page/settings'})});
+
+  // PAGE 3 — one hero and two balanced glance cards. No text below y=401.
+  this.detailTitle=txt(2,149,49,183,48,'WEER',35,C.white);
+  this.settingsButton=create(2,ui.widget.BUTTON,{x:365,y:100,w:53,h:48,
+   text:'⚙',text_size:28,color:C.white,normal_color:0x162e40,
+   press_color:0x286280,radius:22,
+   click_func:()=>push({url:'page/settings'})});
+  rect(2,80,131,320,143,0x102838,29);
   this.weatherIcon=create(2,ui.widget.IMG,{
-   x:101,y:148,w:103,h:103,src:'weather-cloud.png',auto_scale:true
+   x:102,y:146,w:110,h:110,src:'weather-cloud.png',auto_scale:true
   });
-  this.temp=txt(2,207,144,177,86,'--°',68);
-  txt(2,214,225,162,30,'NU',20,C.muted);
-  create(2,ui.widget.IMG,{x:112,y:290,w:48,h:48,src:'weather-drop.png',auto_scale:true});
-  this.amount=txt(2,163,283,221,44,'-- mm',36,C.blue);
-  txt(2,181,325,197,23,'KOMEND UUR',17,C.muted);
-  create(2,ui.widget.IMG,{x:113,y:369,w:45,h:45,src:'weather-wind.png',auto_scale:true});
-  this.wind=txt(2,160,361,216,40,'-- km/u',27);
-  this.gusts=txt(2,165,400,206,24,'',18,C.muted);
-  this.station=txt(2,140,435,200,15,'',12,C.muted);
-  // Small page dots on every native page: these travel with the swipe.
+  this.temp=txt(2,212,142,162,90,'--°',72,C.white);
+  txt(2,222,231,142,31,'NU',20,C.muted);
+
+  // Equal panels yield visibly intentional alignment and prevent clipping.
+  rect(2,85,286,147,110,0x102838,24);
+  rect(2,247,286,148,110,0x102838,24);
+  create(2,ui.widget.IMG,{
+   x:105,y:302,w:41,h:41,src:'weather-drop.png',auto_scale:true
+  });
+  this.amount=txt(2,138,300,90,48,'--',30,C.blue);
+  txt(2,100,353,119,27,'1 UUR',18,C.muted);
+  create(2,ui.widget.IMG,{
+   x:261,y:302,w:38,h:38,src:'weather-wind.png',auto_scale:true
+  });
+  this.wind=txt(2,292,299,97,48,'--',28,C.white);
+  this.gusts=txt(2,252,352,139,28,'',17,C.muted);
+  this.station=txt(2,169,421,141,18,'',12,C.muted);
+
+  // Native swiper remains. Dots are intentionally visible above bottom arc.
   for(let i=0;i<3;i++){
    const marks=[];
    for(let j=0;j<3;j++)marks.push(rect(
-    i,216+j*24,454,8,8,j===i?C.white:0x6c8090,4));
+    i,216+j*24,453,8,8,j===i?C.white:0x587081,4));
    this.indicators.push(marks);
   }
   this.initRadarInbox();
@@ -326,11 +328,11 @@ Page(BasePage({
   const w=d.station||{};
   this.temp.setProperty(ui.prop.TEXT,shown(w.temperature,'°'));
   this.amount.setProperty(ui.prop.TEXT,
-   valid(d.nextHourMm)?d.nextHourMm.toFixed(1)+' mm':'-- mm');
+   valid(d.nextHourMm)?d.nextHourMm.toFixed(1).replace('.',',')+' mm':'--');
   this.wind.setProperty(ui.prop.TEXT,
-   (w.direction||'--')+'  '+shown(w.windKmh,' km/u'));
+   valid(w.windKmh)?Math.round(w.windKmh)+' km/u':'--');
   this.gusts.setProperty(ui.prop.TEXT,
-   valid(w.gustKmh)?'Vlagen '+Math.round(w.gustKmh)+' km/u':'');
+   w.direction?String(w.direction).slice(0,4):'');
   this.station.setProperty(ui.prop.TEXT,'');
   let src='weather-cloud.png';
   const description=String(w.weatherDescription||'').toLowerCase();
@@ -448,10 +450,10 @@ Page(BasePage({
   const labels=this.horizon===1?['NU','15 min','30 min','60 min']:
    ['NU','30 min','60 min','2 uur'];
   this.graphTicks.forEach((tick,i)=>tick.setProperty(ui.prop.TEXT,labels[i]));
-  this.horizonOne.setProperty(ui.prop.MORE,{x:119,y:109,w:113,h:41,
-   normal_color:this.horizon===1?0x286b8f:0x19384a});
-  this.horizonTwo.setProperty(ui.prop.MORE,{x:246,y:109,w:113,h:41,
-   normal_color:this.horizon===2?0x286b8f:0x19384a});
+  this.horizonOne.setProperty(ui.prop.MORE,{x:113,y:111,w:122,h:47,
+   normal_color:this.horizon===1?0x236b95:0x162e40});
+  this.horizonTwo.setProperty(ui.prop.MORE,{x:245,y:111,w:122,h:47,
+   normal_color:this.horizon===2?0x236b95:0x162e40});
   this.renderForecast();
  },
  renderBars(){
@@ -465,9 +467,9 @@ Page(BasePage({
     b.setProperty(ui.prop.VISIBLE,false);continue;
    }
    b.setProperty(ui.prop.VISIBLE,true);
-   const n=nums[i],height=n<0.03?4:Math.max(11,Math.round(Math.sqrt(n/mx)*110));
-   const x=74+i*(this.horizon===1?28:14);
-   b.setProperty(ui.prop.MORE,{x,y:365-height,w:this.horizon===1?16:10,
+   const n=nums[i],height=n<0.03?4:Math.max(11,Math.round(Math.sqrt(n/mx)*89));
+   const x=86+i*(this.horizon===1?26:13);
+   b.setProperty(ui.prop.MORE,{x,y:369-height,w:this.horizon===1?16:9,
     h:height,color:n<0.03?C.empty:C.bar,radius:3});
   }
  },
