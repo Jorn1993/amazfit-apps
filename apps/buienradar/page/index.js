@@ -57,7 +57,7 @@ Page(BasePage({
   }
   // PAGE 1 — radar is genuinely full bleed, not inset in a square card.
   this.radarWidget=create(0,ui.widget.IMG,{
-   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0]
+   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true,auto_scale_obj_fit:true
   });
   rect(0,75,23,330,55,0x0a1622,24);
   this.city=txt(0,82,26,316,49,'Antwerpen',31,C.white);
@@ -65,7 +65,7 @@ Page(BasePage({
   this.radarSource=txt(0,124,421,232,23,'Buienradar.nl',14,C.white);
   // PAGE 2 — clear, large 2-hour rainfall graph.
   rect(1,140,24,200,56,0xffffff,16);
-  create(1,ui.widget.IMG,{x:149,y:29,w:182,h:46,src:'buienradar-logo.png'});
+  create(1,ui.widget.IMG,{x:149,y:29,w:182,h:46,src:'buienradar-logo.png',auto_scale:true});
   txt(1,74,91,332,39,'REGENVERWACHTING',24,C.muted);
   this.rainState=txt(1,69,136,342,52,'Gegevens laden…',27,C.white);
   this.rainDetail=txt(1,81,192,318,45,'De komende 2 uur',20,C.muted);
@@ -84,17 +84,17 @@ Page(BasePage({
   txt(1,353,378,70,25,'2 uur',16,C.muted);
   // PAGE 3 — compact, visual information and much larger values.
   rect(2,123,23,234,61,0xffffff,17);
-  create(2,ui.widget.IMG,{x:130,y:28,w:220,h:51,src:'buienradar-logo.png'});
+  create(2,ui.widget.IMG,{x:130,y:28,w:220,h:51,src:'buienradar-logo.png',auto_scale:true});
   this.detailTitle=txt(2,85,100,310,41,'HET VOLGENDE UUR',22,C.muted);
   this.weatherIcon=create(2,ui.widget.IMG,{
-   x:88,y:166,w:113,h:113,src:'weather-cloud.png'
+   x:88,y:166,w:113,h:113,src:'weather-cloud.png',auto_scale:true
   });
   this.temp=txt(2,211,167,178,98,'--°',62);
   txt(2,216,251,169,25,'GEMETEN',16,C.muted);
   rect(2,77,293,326,2,C.line);
-  create(2,ui.widget.IMG,{x:84,y:307,w:67,h:67,src:'weather-drop.png'});
+  create(2,ui.widget.IMG,{x:84,y:307,w:67,h:67,src:'weather-drop.png',auto_scale:true});
   this.amount=txt(2,164,310,242,61,'-- mm',37,C.blue);
-  create(2,ui.widget.IMG,{x:89,y:382,w:57,h:57,src:'weather-wind.png'});
+  create(2,ui.widget.IMG,{x:89,y:382,w:57,h:57,src:'weather-wind.png',auto_scale:true});
   this.wind=txt(2,155,375,252,60,'-- km/u',29);
   this.gusts=txt(2,165,428,220,25,'Windstoten: --',16,C.muted);
   this.station=txt(2,118,457,244,20,'',12,C.muted);
@@ -264,7 +264,7 @@ Page(BasePage({
    src='weather-rain.png';
   else if(/zonnig|helder|sunny|clear/.test(description))
    src='weather-sun.png';
-  this.weatherIcon.setProperty(ui.prop.MORE,{src});
+  this.weatherIcon.setProperty(ui.prop.MORE,{src,auto_scale:true});
  },
  storeShortcut(d){
   try{
