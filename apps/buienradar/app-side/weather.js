@@ -36,5 +36,5 @@ export function nextHourRain(points){
 }
 export const RADAR_BE=
  'https://image.buienradar.nl/2.0/image/single/RadarMapRainWebmercatorBE'+
- '?height=360&width=360&extension=png&renderBackground=True'+
+ '?height=320&width=320&renderBackground=True'+
  '&renderBranding=False&renderText=False';

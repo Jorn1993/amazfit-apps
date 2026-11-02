@@ -5,7 +5,8 @@ import {nearestStation,nextHourRain,RADAR_BE} from './weather.js';
 const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
 const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
-let rainCache=null,weatherCache=null,radarBusy=false,radarAt=0;
+let rainCache=null,weatherCache=null;
+let radarBusy=false,radarLastDelivered=0,radarTransfer=null;
 function responseBody(result){
  const b=result&&result.body;
  if(typeof b==='string')return b;
@@ -56,50 +57,89 @@ async function forecast(location){
  rainCache={key,at:now,payload};
  return {...payload,cached:false};
 }
+// Radar URL originates from Buienradar's own official PNG image service.
 function downloadRadar(){
  return new Promise((resolve,reject)=>{
-  if(typeof network==='undefined'||!network.downloader)
-   return reject(Error('Downloader unavailable'));
-  const task=network.downloader.downloadFile({
-   url:RADAR_BE+'&t='+Math.floor(Date.now()/300000),timeout:25000,
-   filePath:'data://download/buienradar-map.png'
-  });
-  task.onSuccess=event=>{
-   if(event.statusCode!==200)return reject(Error('Radar HTTP '+event.statusCode));
-   resolve(event.filePath||event.tempFilePath);
+  if(typeof network==='undefined'||!network.downloader){
+   reject(Error('DOWNLOAD: Zepp downloader niet beschikbaar'));return;
+  }
+  try{
+   const task=network.downloader.downloadFile({
+    url:RADAR_BE+'&_v='+Math.floor(Date.now()/300000),
+    timeout:22000,
+    filePath:'data://download/buienradar-radar-'+Date.now()+'.png'
+   });
+   task.onSuccess=event=>{
+    if(!event||Number(event.statusCode)!==200){
+     reject(Error('DOWNLOAD: HTTP '+String(event&&event.statusCode||'?')));return;
+    }
+    const path=event.filePath||event.tempFilePath;
+    if(!path){reject(Error('DOWNLOAD: geen bestand ontvangen'));return;}
+    resolve(path);
+   };
+   task.onFail=event=>reject(Error('DOWNLOAD: netwerkfout '+String(event&&event.code||'')));
+  }catch(_){reject(Error('DOWNLOAD: Zepp downloadfout'));}
+ });
+}
+function waitForTransfer(file){
+ return new Promise((resolve,reject)=>{
+  if(!file||typeof file.on!=='function'){
+   reject(Error('OVERDRACHT: geen bestandsobject'));return;
+  }
+  let done=false;
+  const timeout=setTimeout(()=>{
+   if(done)return;done=true;
+   try{if(typeof file.cancel==='function')file.cancel();}catch(_){}
+   reject(Error('OVERDRACHT: time-out'));
+  },35000);
+  const finish=(error)=>{
+   if(done)return;done=true;clearTimeout(timeout);
+   if(error)reject(Error(error));else resolve();
   };
-  task.onFail=()=>reject(Error('Radar download unavailable'));
+  file.on('change',event=>{
+   const state=(event&&event.data&&event.data.readyState)||file.readyState;
+   if(state==='transferred')finish();
+   else if(state==='error'||state==='canceled')finish('OVERDRACHT: '+state);
+  });
+  if(file.readyState==='transferred')finish();
  });
 }
 async function sendRadar(){
- if(radarBusy)return {ok:true,queued:true};
- if(radarAt&&Date.now()-radarAt<REFRESH_MS)return {ok:true,cached:true};
+ if(radarBusy)throw Error('Radaroverdracht is al bezig');
+ if(radarLastDelivered&&Date.now()-radarLastDelivered<REFRESH_MS)
+  return {ok:true,alreadyDelivered:true};
  radarBusy=true;
  try{
-  const downloaded=await downloadRadar();
-  if(typeof image==='undefined'||typeof transferFile==='undefined')
-   throw Error('Native Zepp file transfer unavailable');
-  const converted=await image.convert({
-   filePath:downloaded,targetFilePath:'data://download/buienradar-map-converted.png'
-  });
-  const path=converted&&converted.targetFilePath;
-  if(!path)throw Error('Radar conversion failed');
-  const object=transferFile.getOutbox().enqueueFile(path,{
-   kind:'buienradar-radar',updatedAt:Date.now()
-  });
-  if(!object)throw Error('Radar transfer queue failed');
-  radarAt=Date.now();
-  return {ok:true,queued:true};
- }finally{radarBusy=false;}
+  const path=await downloadRadar();
+  if(typeof image==='undefined'||typeof image.convert!=='function')
+   throw Error('OMZETTEN: Zepp afbeeldingsconverter ontbreekt');
+  let converted;
+  try{converted=await image.convert({filePath:path});}
+  catch(_){throw Error('OMZETTEN: radarbeelddownload is geen bruikbare PNG');}
+  if(!converted||!converted.targetFilePath)
+   throw Error('OMZETTEN: geen uitvoerbestand');
+  if(typeof transferFile==='undefined'||typeof transferFile.getOutbox!=='function')
+   throw Error('OVERDRACHT: Zepp telefoonservice ontbreekt');
+  const outbox=transferFile.getOutbox();
+  if(!outbox||typeof outbox.enqueueFile!=='function')
+   throw Error('OVERDRACHT: wachtrij niet beschikbaar');
+  const file=outbox.enqueueFile(converted.targetFilePath,
+   {kind:'buienradar-radar',updatedAt:Date.now()});
+  radarTransfer=file;
+  await waitForTransfer(file);
+  radarLastDelivered=Date.now();
+  return {ok:true,transferred:true};
+ }finally{radarBusy=false;radarTransfer=null;}
 }
 AppSideService(BaseSideService({
  async onRequest(req,res){
   try{
    if(!req)throw Error('Missing request');
    if(req.method==='radar.refresh'){
-    // Fire and forget: file transfer can finish after the response.
-    void sendRadar().catch(()=>{});
-    res(null,{ok:true,requested:true});return;
+    // Return only after an actual transfer or a concrete failure.
+    try{res(null,await sendRadar());}
+    catch(e){res(null,{ok:false,error:String(e&&e.message||e).slice(0,100)});}
+    return;
    }
    if(req.method!=='rain.forecast')
     throw Error('Unsupported request');
