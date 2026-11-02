@@ -1,5 +1,5 @@
 import * as ui from '@zos/ui';
-import {setScrollMode, SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
+import {setScrollMode,getSwiperIndex,SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
 import TransferFile from '@zos/ble/TransferFile';
 import {LocalStorage} from '@zos/storage';
 import {push} from '@zos/router';
@@ -178,6 +178,13 @@ Page(BasePage({
   this.lastConfigSignature=String(storage.getItem('buienradar.location')||'')+'|'+
    String(storage.getItem('buienradar.alert')||'');
   this.frameTimer=setInterval(()=>{
+   // Zepp's documented getSwiperIndex is 1-based. modeParams callbacks
+   // alone are not a supported reliable way to track the active page.
+   try{
+    const current=getSwiperIndex();
+    if(Number.isInteger(current)&&current>=1&&current<=3)
+     this.screen=current-1;
+   }catch(_){}
    if(this.screen===0)this.nextRadarFrame();
    if(++this.configTick%12===0)this.checkConfig();
   },950);
@@ -311,7 +318,6 @@ Page(BasePage({
   const received=d.location||this.location;
   this.location=received;
   this.updateCityLabels(received.name||'Antwerpen');
-  this.placeMarker();
   this.scheduleRainAlert(d);
   this.renderForecast();
   const w=d.station||{};
