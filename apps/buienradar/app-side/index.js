@@ -28,7 +28,8 @@ async function download(location) {
 function selectedLocation() {
   try {
     const raw = settings.settingsStorage.getItem('buienradar.location');
-    return raw ? normalLocation(JSON.parse(raw)) : null;
+    return raw ? normalLocation(JSON.parse(raw)) :
+      normalLocation({name:'Antwerpen',lat:51.2194,lon:4.4025});
   } catch (_) { return null; }
 }
 async function forecast(location) {
