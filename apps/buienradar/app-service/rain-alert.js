@@ -17,9 +17,7 @@ AppService({
    const content='Volgens de laatste voorspelling regen rond '+new Date(data.onsetAt).toLocaleTimeString('nl-BE',{
     hour:'2-digit',minute:'2-digit'
    })+' in '+String(data.place||'jouw buurt').slice(0,28);
-   notify({title:'Regen op komst',content,actions:[{
-    text:'Bekijk radar',file:'app-service/rain-alert'
-   }],vibrate:5});
+   notify({title:'Regen op komst',content,actions:[],vibrate:5});
   }catch(_){}
  }
 });
