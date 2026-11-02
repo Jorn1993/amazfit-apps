@@ -75,13 +75,10 @@ Page(BasePage({
     this.radarStamp=saved.generatedAt;
    }
   }catch(_){}
-  setScrollMode({mode:SCROLL_MODE_SWIPER_HORIZONTAL,options:{
-   width:SIZE,count:3,modeParams:{on_page:(index)=>{
-    if(this.disposed)return;
-    this.screen=index;this.paintIndicators();
-    if(index===0)void this.requestRadar();
-   }}
-  }});
+  // The documented horizontal swiper takes width and count only.
+  // The active (1-based) page is read from getSwiperIndex().
+  setScrollMode({mode:SCROLL_MODE_SWIPER_HORIZONTAL,
+   options:{width:SIZE,count:3}});
   const create=(page,type,props)=>{
    const w=this.pageViews[page].createWidget(type,props);
    this.parts[page].push(w);return w;
