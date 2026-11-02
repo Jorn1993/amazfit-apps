@@ -279,6 +279,7 @@ Page(BasePage({
   if(this.disposed)return;
   const d=this.rain||EMPTY;
   if(!forecastFresh(d)){
+   this.scheduleRainAlert(EMPTY); // cancel stale scheduled rain notifications
    this.rainState.setProperty(ui.prop.TEXT,'GEEN RECENTE DATA');
    this.rainDetail.setProperty(ui.prop.TEXT,'Open de app opnieuw');
    this.temp.setProperty(ui.prop.TEXT,'--°');
@@ -345,6 +346,8 @@ Page(BasePage({
   if(key===this.lastConfigSignature)return;
   this.lastConfigSignature=key;
   this.lastAlertKey=null;
+  // Prevent the full-screen widget from showing weather from a previous city.
+  storage.setItem('buienradar.forecast.v2','');
   try{
    const loc=JSON.parse(storage.getItem('buienradar.location')||'null');
    if(loc&&loc.name){this.location=loc;
