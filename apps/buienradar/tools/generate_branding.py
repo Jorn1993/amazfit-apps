@@ -79,9 +79,16 @@ def official_logo():
     ImageDraw.Draw(mask).ellipse((14,14,242,242),fill=255)
     blue=Image.new("RGBA",(256,256),(20,61,149,255))
     icon.paste(blue,(0,0),mask)
-    badge=symbol.copy()
-    badge.thumbnail((174,174),Image.Resampling.LANCZOS)
-    icon.alpha_composite(badge,((256-badge.width)//2,(256-badge.height)//2))
+    # Rebuild the source mark as a clean white shape on circular blue.
+    # Strip white pixels from mirrored logo files to avoid an inner square.
+    badge=symbol.copy().convert("RGBA")
+    white=Image.new("RGB",badge.size,(255,255,255))
+    darkness=ImageChops.difference(badge.convert("RGB"),white).convert("L")
+    alpha=darkness.point(lambda v: min(255,v*2))
+    clean=Image.new("RGBA",badge.size,(255,255,255,0))
+    clean.putalpha(alpha)
+    clean.thumbnail((172,172),Image.Resampling.LANCZOS)
+    icon.alpha_composite(clean,((256-clean.width)//2,(256-clean.height)//2))
     save("icon.png",icon)
     print("Buienradar branding source:",source)
 
