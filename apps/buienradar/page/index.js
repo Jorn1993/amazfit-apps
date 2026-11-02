@@ -107,8 +107,8 @@ Page(BasePage({
   this.horizonTwo=create(1,ui.widget.BUTTON,{x:246,y:109,w:113,h:41,
     text:'2 UUR',text_size:18,color:C.white,normal_color:0x286b8f,
     press_color:0x246789,radius:18,click_func:()=>this.setHorizon(2)});
-  this.rainState=txt(1,57,176,366,53,'Laden…',31,C.white);
-  this.rainDetail=txt(1,81,228,318,43,'',21,C.muted);
+  this.rainState=txt(1,55,166,370,52,'Laden…',31,C.white);
+  this.rainDetail=txt(1,81,216,318,38,'',21,C.muted);
   rect(1,62,365,358,2,C.line);
   for(let i=0;i<12;i++){
    rect(1,68+i*29,267,17,1,C.line);
@@ -118,10 +118,12 @@ Page(BasePage({
    rect(1,74+i*14,362,10,4,C.empty,3)
   );
   rect(1,66,246,3,122,C.orange);
-  txt(1,57,378,75,25,'NU',17);
-  txt(1,152,378,82,25,'30 min',16,C.muted);
-  txt(1,260,378,85,25,'60 min',16,C.muted);
-  txt(1,353,378,70,25,'2 uur',16,C.muted);
+  this.graphTicks=[
+   txt(1,57,378,75,28,'NU',18),
+   txt(1,152,378,82,28,'30 min',18,C.muted),
+   txt(1,260,378,85,28,'60 min',18,C.muted),
+   txt(1,353,378,70,28,'2 uur',18,C.muted)
+  ];
   // PAGE 3 — compact, visual information and much larger values.
   this.detailTitle=txt(2,100,61,280,45,'WEER',34,C.white);
   this.settingsButton=create(2,ui.widget.BUTTON,{x:373,y:81,w:58,h:49,
@@ -135,7 +137,8 @@ Page(BasePage({
   txt(2,208,247,191,30,'NU',19,C.muted);
   rect(2,77,293,326,2,C.line);
   create(2,ui.widget.IMG,{x:84,y:307,w:67,h:67,src:'weather-drop.png',auto_scale:true});
-  this.amount=txt(2,164,310,242,61,'-- mm',37,C.blue);
+  this.amount=txt(2,160,299,246,62,'-- mm',38,C.blue);
+  txt(2,201,351,185,27,'KOMEND UUR',18,C.muted);
   create(2,ui.widget.IMG,{x:89,y:382,w:57,h:57,src:'weather-wind.png',auto_scale:true});
   this.wind=txt(2,155,375,252,60,'-- km/u',29);
   this.gusts=txt(2,151,419,255,36,'',21,C.muted);
@@ -416,6 +419,9 @@ Page(BasePage({
  },
  setHorizon(hours){
   this.horizon=hours===1?1:2;
+  const labels=this.horizon===1?['NU','15 min','30 min','60 min']:
+   ['NU','30 min','60 min','2 uur'];
+  this.graphTicks.forEach((tick,i)=>tick.setProperty(ui.prop.TEXT,labels[i]));
   this.horizonOne.setProperty(ui.prop.MORE,{x:119,y:109,w:113,h:41,
    normal_color:this.horizon===1?0x286b8f:0x19384a});
   this.horizonTwo.setProperty(ui.prop.MORE,{x:246,y:109,w:113,h:41,
