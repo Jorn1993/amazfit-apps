@@ -3,6 +3,7 @@ import {setScrollMode, SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
 import TransferFile from '@zos/ble/TransferFile';
 import {LocalStorage} from '@zos/storage';
 import {push} from '@zos/router';
+import {Time} from '@zos/sensor';
 import {set as setAlarm, cancel as cancelAlarm} from '@zos/alarm';
 import {BasePage} from '@zeppos/zml/base-page';
 
@@ -14,6 +15,22 @@ const C={
  line:0x34434e,bar:0x2f9dd8,empty:0x244052,orange:0xff9267
 };
 const EMPTY={ok:false,points:[],summary:null};
+const MAX_AGE=8*60*1000;
+function forecastFresh(d,now=Date.now()){
+ return !!(d&&d.ok===true&&Number.isFinite(d.updatedAt)&&
+  now>=d.updatedAt-60000&&now-d.updatedAt<=MAX_AGE&&
+  Array.isArray(d.points)&&d.points.length>=24&&d.summary1h&&d.summary2h);
+}
+function headline(s){
+ if(!s)return 'GEEN GEGEVENS';
+ if(s.state==='dry')return 'DROOG';
+ if(s.state==='raining')return 'HET REGENT';
+ return 'REGEN OVER '+s.etaMinutes+' MIN';
+}
+function amount(s,hours){
+ if(!s)return 'Geen recente voorspelling';
+ return s.totalMm.toFixed(1).replace('.',',')+' mm · '+(hours===1?'komend uur':'komende 2 uur');
+}
 const storage=new LocalStorage();
 function valid(n){return typeof n==='number'&&Number.isFinite(n);}
 function shown(n,unit){return valid(n)?Math.round(n)+unit:'--'+unit;}
@@ -25,7 +42,7 @@ Page(BasePage({
   this.frameIndex=0;this.pendingFrame=null;this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
-  this.lastAlertKey=null;
+  this.lastAlertKey=null;this.watchTime=new Time();this.lastClock='';
   try{
    const saved=JSON.parse(storage.getItem('buienradar.radar-frames.v1')||'null');
    const time=Date.parse(saved&&saved.generatedAt);
@@ -63,9 +80,12 @@ Page(BasePage({
   this.radarWidget=create(0,ui.widget.IMG,{
    x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true,auto_scale_obj_fit:true
   });
-  // A compact location pill; its coordinates follow the selected watch location.
-  rect(0,143,23,194,48,0x081e2c,22);
-  this.city=txt(0,150,28,180,38,'Antwerpen',24,C.white);
+  // Circular safe zone: unobtrusive city pill plus watch time on the radar.
+  rect(0,157,25,166,48,0x081e2c,22);
+  this.city=txt(0,163,30,154,38,'Antwerpen',24,C.white);
+  rect(0,64,115,118,42,0x081e2c,18);
+  this.radarClock=txt(0,70,118,106,36,'--:--',27,C.white);
+  this.updateRadarClock();
   // Outline-only yellow square, not a yellow dot covering precipitation pixels.
   this.markerPieces=[
    rect(0,0,0,21,3,0xffd54d),rect(0,0,0,21,3,0xffd54d),
@@ -78,8 +98,8 @@ Page(BasePage({
    text:'−',text_size:31,color:C.white,normal_color:0x0b2332,
    press_color:0x1c4457,radius:20,click_func:()=>this.changeZoom(-1)});
   this.placeMarker();
-  // PAGE 2 — clear, large 2-hour rainfall graph.
-  txt(1,105,48,270,46,'REGEN',33,C.white);
+  // PAGE 2 — one dominant rain state and a direct 1h/2h switch.
+  txt(1,102,49,276,45,'REGEN',34,C.white);
   this.horizon=2;
   this.horizonOne=create(1,ui.widget.BUTTON,{x:119,y:109,w:113,h:41,
     text:'1 UUR',text_size:18,color:C.white,normal_color:0x19384a,
@@ -87,9 +107,8 @@ Page(BasePage({
   this.horizonTwo=create(1,ui.widget.BUTTON,{x:246,y:109,w:113,h:41,
     text:'2 UUR',text_size:18,color:C.white,normal_color:0x286b8f,
     press_color:0x246789,radius:18,click_func:()=>this.setHorizon(2)});
-  this.rainHeader=txt(1,95,168,290,26,'NEERSLAG',17,C.muted);
-  this.rainState=txt(1,69,196,342,51,'Gegevens laden…',27,C.white);
-  this.rainDetail=txt(1,81,244,318,37,'',18,C.muted);
+  this.rainState=txt(1,57,176,366,53,'Laden…',31,C.white);
+  this.rainDetail=txt(1,81,228,318,43,'',21,C.muted);
   rect(1,62,365,358,2,C.line);
   for(let i=0;i<12;i++){
    rect(1,68+i*29,267,17,1,C.line);
@@ -113,13 +132,13 @@ Page(BasePage({
    x:88,y:166,w:113,h:113,src:'weather-cloud.png',auto_scale:true
   });
   this.temp=txt(2,211,167,178,98,'--°',62);
-  txt(2,208,253,191,23,'TEMPERATUUR',16,C.muted);
+  txt(2,208,247,191,30,'NU',19,C.muted);
   rect(2,77,293,326,2,C.line);
   create(2,ui.widget.IMG,{x:84,y:307,w:67,h:67,src:'weather-drop.png',auto_scale:true});
   this.amount=txt(2,164,310,242,61,'-- mm',37,C.blue);
   create(2,ui.widget.IMG,{x:89,y:382,w:57,h:57,src:'weather-wind.png',auto_scale:true});
   this.wind=txt(2,155,375,252,60,'-- km/u',29);
-  this.gusts=txt(2,165,426,220,29,'',19,C.muted);
+  this.gusts=txt(2,151,419,255,36,'',21,C.muted);
   this.station=txt(2,118,462,244,18,'',12,C.muted);
   // Small page dots on every native page: these travel with the swipe.
   for(let i=0;i<3;i++){
@@ -133,7 +152,7 @@ Page(BasePage({
   this.lastConfigSignature=String(storage.getItem('buienradar.location')||'')+'|'+
    String(storage.getItem('buienradar.alert')||'');
   this.frameTimer=setInterval(()=>{
-   if(this.screen===0)this.nextRadarFrame();
+   if(this.screen===0){this.nextRadarFrame();this.updateRadarClock();}
    if(++this.configTick%12===0)this.checkConfig();
   },950);
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
