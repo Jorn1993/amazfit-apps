@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {intensity,parseRaintext,describe,normalLocation} from '../app-side/rain.js';
+import {intensity,parseRaintext,describe,freshForecast,normalLocation} from '../app-side/rain.js';
 const make=(values,start=600)=>{
  return values.map((v,i)=>{
    const t=(start+i*5)%1440;
@@ -39,4 +39,21 @@ test('Coordinates are verified and rounded before network calls',()=>{
  assert.deepEqual(normalLocation({name:'Gent',lat:51.0543,lon:3.7174}),
   {name:'Gent',lat:51.0543,lon:3.7174});
  assert.throws(()=>normalLocation({name:'Outside',lat:0,lon:0}));
+});
+
+test('One and two-hour views never contradict the same 105-minute rain onset',()=>{
+ const input=Array(24).fill(0);input[21]=109;
+ const pts=parseRaintext(make(input));
+ assert.equal(describe(pts,60).state,'dry');
+ assert.equal(describe(pts,60).detail,'Geen regen komend uur');
+ assert.equal(describe(pts,120).state,'incoming');
+ assert.equal(describe(pts,120).etaMinutes,105);
+ assert.equal(describe(pts,120).detail,'Regen over 105 min');
+});
+test('Freshness rejects unavailable, future-dated and stale predictions',()=>{
+ const now=Date.now(),points=parseRaintext(make(Array(24).fill(0)));
+ assert.equal(freshForecast({ok:true,points,updatedAt:now-3*60000},now),true);
+ assert.equal(freshForecast({ok:true,points,updatedAt:now-25*60000},now),false);
+ assert.equal(freshForecast({ok:false,points,updatedAt:now},now),false);
+ assert.equal(freshForecast({ok:true,points,updatedAt:now+3*60000},now),false);
 });

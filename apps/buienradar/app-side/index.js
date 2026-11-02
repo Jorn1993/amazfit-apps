@@ -52,7 +52,8 @@ async function forecast(location){
   return {...rainCache.payload,cached:true};
  const points=await readRain(location);
  const station=await weather(location);
- const payload={ok:true,location,points,summary:describe(points),
+ const payload={ok:true,location,points,summary:describe(points,120),
+  summary1h:describe(points,60),summary2h:describe(points,120),
   nextHourMm:nextHourRain(points),station,updatedAt:now};
  rainCache={key,at:now,payload};
  return {...payload,cached:false};

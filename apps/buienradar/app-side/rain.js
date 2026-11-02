@@ -23,28 +23,40 @@ export function parseRaintext(input) {
     return { time, raw, mmh: intensity(raw) };
   });
 }
-export function describe(points) {
-  if (!Array.isArray(points) || !points.length) throw Error('Geen neerslagdata');
-  const wet = points.map(p => p.mmh >= 0.03);
-  const first = wet.indexOf(true), maximum = Math.max(...points.map(p => p.mmh));
-  let headline, detail, eta = null;
-  if (first === -1) {
-    headline = 'HET BLIJFT DROOG'; detail = 'De komende 2 uur geen regen';
-  } else if (first === 0) {
-    headline = 'HET REGENT';
-    const end = wet.indexOf(false);
-    if (end < 0) detail = 'Voorlopig geen droge periode';
-    else { eta = end * 5; detail = 'Droog over ongeveer ' + eta + ' min'; }
-  } else {
-    headline = 'REGEN OP KOMST'; eta = first * 5;
-    detail = 'Regen over ongeveer ' + eta + ' min';
+export function describe(points, minutes=120) {
+  if (![60,120].includes(minutes)) throw Error('Onbekende vooruitzichtperiode');
+  if (!Array.isArray(points) || points.length < minutes / 5)
+    throw Error('Onvolledige neerslagperiode');
+  const scope = points.slice(0,minutes / 5);
+  const wet = scope.map(p=>Number.isFinite(p.mmh)&&p.mmh >= 0.03);
+  const first=wet.indexOf(true),max=Math.max(...scope.map(p=>p.mmh||0));
+  const total=Math.round(scope.reduce((n,p)=>n+(p.mmh||0)*5/60,0)*100)/100;
+  let headline,detail,state,eta=null,endMinutes=null;
+  if(first<0){
+    state='dry';headline='HET BLIJFT DROOG';
+    detail=minutes===60?'Geen regen komend uur':'Geen regen komende 2 uur';
+  }else if(first===0){
+    state='raining';headline='HET REGENT';
+    const end=wet.indexOf(false);
+    endMinutes=end<0?null:end*5;
+    detail=endMinutes===null?'Regen blijft aanhouden':
+      'Droog over '+endMinutes+' min';
+  }else{
+    state='incoming';eta=first*5;headline='REGEN OP KOMST';
+    detail='Regen over '+eta+' min';
   }
   return {
-    headline, detail, etaMinutes: eta, rainingNow: first === 0,
-    nowMm: Math.round(points[0].mmh * 10) / 10,
-    maxMm: Math.round(maximum * 10) / 10,
-    totalMm: Math.round(points.reduce((n, p) => n + p.mmh * 5 / 60, 0) * 100) / 100
+    state,headline,detail,etaMinutes:eta,endMinutes,
+    rainingNow:first===0,windowMinutes:minutes,
+    nowMm:Math.round((scope[0].mmh||0)*10)/10,
+    maxMm:Math.round(max*10)/10,totalMm:total
   };
+}
+// Server-side source timestamp must be sane before callers may call it "current".
+export function freshForecast(data,now=Date.now(),ttlMs=8*60*1000){
+  return Boolean(data&&data.ok===true&&Number.isFinite(data.updatedAt)&&
+    data.updatedAt<=now+60000&&now-data.updatedAt>=0&&
+    now-data.updatedAt<=ttlMs&&Array.isArray(data.points)&&data.points.length>=24);
 }
 export function normalLocation(loc) {
   if (!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lon)
