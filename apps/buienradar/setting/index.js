@@ -6,7 +6,7 @@ const CITIES=[
  ['Luik',50.6326,5.5797],['Amsterdam',52.3676,4.9041],
  ['Rotterdam',51.9244,4.4777],['Maastricht',50.8514,5.691]
 ];
-const VERSION='0.2.2';
+const VERSION='0.3.0';
 let name='',lat='',lon='';
 AppSettingsPage({
  build(props){
@@ -27,7 +27,7 @@ AppSettingsPage({
    marginBottom:'12px',clear:'both'}},[x]));
   add(Text({bold:true,style:{fontSize:'28px',color:ink}},'BUIENRADAR'));
   add(Text({paragraph:true,style:{color:muted,fontSize:'13px',lineHeight:'1.5'}},
-   'Drie veegschermen: officiële radar, grote regengrafiek en weer van een nabij meetstation. Neerslag ververst iedere 5 minuten. GPS alleen op verzoek.'));
+   'Drie veegschermen: bewegende officiële Buienradar-kaart, grote regengrafiek en weergegevens. Kies hieronder je locatie; de radar heeft geen GPS- of vernieuwknoppen.'));
   add(Text({bold:true,style:{fontSize:'17px',color:ink}},'Locatie: '+active.name));
   for(const city of CITIES){
    const selected=active.name===city[0];
