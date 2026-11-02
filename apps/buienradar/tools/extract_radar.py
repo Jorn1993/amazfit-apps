@@ -22,29 +22,33 @@ SOURCE = (
 DEST = Path(os.environ.get("RADAR_DIR", "/tmp/buienradar-radar-cache"))
 
 def relocate_radar_frame_time(frame: Image.Image) -> Image.Image:
-    """Move the *rasterized Buienradar frame time*, never substitute watch time.
-    Buienradar draws this text at upper-left of the rectangular image, where
-    the circular watch screen clips it. Extract the bright text pixels and
-    composite them into the circular display's safe area in each GIF frame.
+    """Keep Buienradar's *real per-frame* time, but inside the watch circle.
+
+    Never use device time for a radar frame. Avoid a giant clock over the map.
+    The original source's bright time glyphs are masked out at the old edge
+    and displayed at the bottom center, within the round screen safe area.
     """
     im = frame.convert("RGB")
     if im.size != (320, 320):
         raise ValueError("Unexpected Belgian radar map dimensions")
-    src = im.crop((3, 2, 121, 30))
-    alpha = Image.new("L", src.size)
-    pix = src.load()
-    ap = alpha.load()
-    for y in range(src.height):
-        for x in range(src.width):
-            r, g, b = pix[x, y]
-            # White/near-white lettering over dark blue/green radar backing.
-            ap[x, y] = 255 if min(r, g, b) >= 210 and max(r, g, b)-min(r, g, b) < 50 else 0
+    crop = im.crop((3, 2, 121, 31))
+    alpha = Image.new("L", crop.size)
+    pix, mask = crop.load(), alpha.load()
+    for y in range(crop.height):
+        for x in range(crop.width):
+            r,g,b = pix[x,y]
+            mask[x,y] = 255 if min(r,g,b) >= 210 and max(r,g,b)-min(r,g,b)<50 else 0
+    # Restore the old label region using nearby background pixels.  This
+    # source map area is normally open North Sea, not geographical data.
+    background = im.crop((3, 35, 121, 64))
+    im.paste(background,(3,2),alpha)
     result = im.convert("RGBA")
     draw = ImageDraw.Draw(result)
-    draw.rounded_rectangle((48, 74, 178, 111), radius=15, fill=(6, 22, 35, 250))
-    letters = Image.new("RGBA", src.size, (245, 250, 255, 0))
-    letters.putalpha(alpha)
-    result.alpha_composite(letters, (55, 79))
+    draw.rounded_rectangle((97, 265, 223, 295),
+        radius=14, fill=(6,22,35,246))
+    glyphs = Image.new("RGBA", crop.size, (246,250,255,0))
+    glyphs.putalpha(alpha)
+    result.alpha_composite(glyphs,(101,266))
     return result.convert("RGB")
 
 def main():
@@ -80,8 +84,9 @@ def main():
         durations.append(int(source.info.get("duration", 500)))
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     manifest = {
-        "version": 2,
+        "version": 3,
         "frameTimestampRelocated": True,
+        "frameTimestampPosition": "bottom-safe",
         "source": "Buienradar.nl",
         "product": "RadarMapRainWebmercatorBE",
         "generatedAt": stamp,

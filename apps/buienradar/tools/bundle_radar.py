@@ -26,8 +26,10 @@ def main():
             # Older published cache may not yet have relocated timestamps.
             # Process it once, not twice; never invent synthetic "watch time".
             radar=im.convert("RGB")
-            if not m.get("frameTimestampRelocated",False):
-                radar=relocate_radar_frame_time(radar)
+            if m.get("frameTimestampPosition")!="bottom-safe":
+                # Older frame packs have timestamps at the top-left;
+                # do not pass them off as the redesigned UI.
+                raise RuntimeError("Waiting for radar-cache with bottom-safe frame times")
             full=radar.resize((480,480),Image.Resampling.LANCZOS)
             full.save(ROOT/("radar-frame-"+str(i)+".png"),"PNG",optimize=True)
     print("Bundled six real animated radar frames; original Buienradar snapshot:",m["generatedAt"])
