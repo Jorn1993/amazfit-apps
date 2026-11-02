@@ -129,8 +129,12 @@ Page(BasePage({
    this.indicators.push(marks);
   }
   this.initRadarInbox();
+  this.configTick=0;
+  this.lastConfigSignature=String(storage.getItem('buienradar.location')||'')+'|'+
+   String(storage.getItem('buienradar.alert')||'');
   this.frameTimer=setInterval(()=>{
    if(this.screen===0)this.nextRadarFrame();
+   if(++this.configTick%12===0)this.checkConfig();
   },950);
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
   void this.readLocation();
@@ -317,9 +321,18 @@ Page(BasePage({
    if(this.screen===0)void this.requestRadar();
   }
  },
- onResume(){
-  // Reapply settings changed through the watch-only settings screen.
-  void this.readLocation().then(()=>this.refresh());
+ checkConfig(){
+  const key=String(storage.getItem('buienradar.location')||'')+'|'+
+   String(storage.getItem('buienradar.alert')||'');
+  if(key===this.lastConfigSignature)return;
+  this.lastConfigSignature=key;
+  this.lastAlertKey=null;
+  try{
+   const loc=JSON.parse(storage.getItem('buienradar.location')||'null');
+   if(loc&&loc.name){this.location=loc;
+    this.city.setProperty(ui.prop.TEXT,loc.name);this.placeMarker();}
+  }catch(_){}
+  void this.refresh();
  },
  async readLocation(){
   try{
