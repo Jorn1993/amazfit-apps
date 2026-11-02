@@ -165,59 +165,48 @@ Page(BasePage({
    throw Error('Zepp telefoonverbinding ontbreekt');
   return this.messaging.request(msg,{timeout});
  },
- stopRadarMonitoring(){
-  this.radarActive=false;
-  if(this.radarWatchdog!==null){clearTimeout(this.radarWatchdog);this.radarWatchdog=null;}
-  if(this.radarPollTimer!==null){clearInterval(this.radarPollTimer);this.radarPollTimer=null;}
+ async fetchRadarManifest(){
+  const manifest=await this.phone({method:'radar.manifest'},18000);
+  if(!manifest||manifest.ok!==true||!manifest.frameCount)
+   throw Error(manifest&&manifest.error||'Animatie tijdelijk niet beschikbaar');
+  return manifest;
  },
- async pollRadar(){
-  if(this.disposed||this.radarWidget||!this.radarActive)return;
-  try{
-   const r=await this.phone({method:'radar.status'},8000);
-   if(this.disposed||!this.radarActive||this.radarWidget)return;
-   if(!r||r.ok!==true){this.radarFailed('STATUS: geen verbinding met telefoon');return;}
-   if(r.requestId!==this.radarRequestId&&r.requestId!==undefined)return;
-   if(r.stage==='failed'){this.radarFailed(r.error||'Onbekende radarfout');return;}
-   const messages={
-    starting:'RADAR: starten…',download:'DOWNLOAD: Buienradar afbeelding…',
-    convert:'CONVERT: afbeelding omzetten…',transfer:'TRANSFER: naar horloge…',
-    transferred:'OVERDRACHT KLAAR: afbeelding openen…'
+ async downloadSingleFrame(index){
+  const response=await this.phone({method:'radar.frame',params:{index}},10000);
+  if(!response||response.ok!==true)
+   throw Error(response&&response.error||'Frame ophalen mislukt');
+  if(this.liveFrames[index])return;
+  await new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>{
+    if(this.pendingFrame&&this.pendingFrame.index===index)this.pendingFrame=null;
+    reject(Error('Horloge ontvangt frame '+(index+1)+' niet'));
+   },46000);
+   this.pendingFrame={index,
+    resolve:()=>{clearTimeout(timer);resolve();},
+    reject:error=>{clearTimeout(timer);reject(error);}
    };
-   const message=messages[r.stage];
-   if(message)this.radarMessage.setProperty(ui.prop.TEXT,message);
-  }catch(e){
-   if(Date.now()-this.radarRequestedAt>17000)
-    this.radarFailed('STATUS: Zepp telefoon reageert niet');
-  }
+   if(this.liveFrames[index]){
+    this.pendingFrame.resolve();this.pendingFrame=null;
+   }
+  });
  },
  async requestRadar(){
-  if(this.disposed||this.radarPending)return;
-  this.radarPending=true;this.radarActive=true;this.radarError=false;
-  this.radarRequestedAt=Date.now();
-  this.radarMessage.setProperty(ui.prop.TEXT,'RADAR: telefoon verbinden…');
-  this.radarMessage.setProperty(ui.prop.VISIBLE,this.screen===0&&!this.radarWidget);
-  this.stopRadarMonitoring();
-  this.radarActive=true;
-  this.radarWatchdog=setTimeout(()=>{
-   if(!this.disposed&&!this.radarWidget)
-    this.radarFailed('RADAR: geen afbeelding na 80s');
-  },80000);
+  if(this.disposed||this.radarSyncing)return;
+  this.radarSyncing=true;
   try{
-   const result=await this.phone({method:'radar.refresh'},11000);
-   if(this.disposed)return;
-   if(!result||result.ok!==true){
-    this.radarFailed(result&&result.error||'DOWNLOAD: telefoon niet bereikbaar');return;
-   }
-   this.radarRequestId=result.requestId??null;
-   if(!this.radarWidget){
-    await this.pollRadar();
-    if(!this.radarError&&!this.radarWidget){
-     this.radarPollTimer=setInterval(()=>void this.pollRadar(),3000);
-    }
+   const manifest=await this.fetchRadarManifest();
+   if(manifest.generatedAt===this.radarBatchStamp&&this.radarPaths.length>=3)return;
+   this.radarBatchStamp=manifest.generatedAt;
+   this.liveFrames=new Array(manifest.frameCount).fill(null);
+   this.radarSource.setProperty(ui.prop.TEXT,'Buienradar.nl · synchroniseren');
+   for(let i=0;i<manifest.frameCount;i++){
+    if(this.disposed)break;
+    try{await this.downloadSingleFrame(i);}
+    catch(err){this.radarFailed('RADAR: '+String(err&&err.message||err));break;}
    }
   }catch(e){
-   if(!this.disposed)this.radarFailed('ZEPP: '+String(e&&e.message||e).slice(0,65));
-  }finally{this.radarPending=false;}
+   if(!this.disposed)this.radarFailed('RADAR: '+String(e&&e.message||e));
+  }finally{this.radarSyncing=false;}
  },
  draw(){
   const d=this.rain||ZERO;
@@ -272,13 +261,13 @@ Page(BasePage({
   if(this.disposed||this.loading)return;
   this.loading=true;
   try{
-   const params=this.lastGps?{gps:this.lastGps}:{};
+   const params={};
    const r=await this.phone({method:'rain.forecast',params},25000);
    if(this.disposed)return;
    this.rain=r&&r.ok===true?r:ZERO;
    this.draw();
    if(this.rain.ok)this.storeShortcut(this.rain);
-   if(forceRadar||this.screen===0)void this.requestRadar();
+   if(this.screen===0)void this.requestRadar();
   }catch(_){
    if(!this.disposed){this.rain=ZERO;this.draw();}
   }finally{this.loading=false;}
