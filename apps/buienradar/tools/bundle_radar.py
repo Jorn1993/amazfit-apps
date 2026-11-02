@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import requests
 from PIL import Image
+from extract_radar import relocate_radar_frame_time
 BASE="https://raw.githubusercontent.com/Jorn1993/amazfit-apps/radar-cache/radar"
 ROOT=Path("apps/buienradar/assets/balance2")
 def main():
@@ -22,8 +23,12 @@ def main():
         with Image.open(io.BytesIO(result.content)) as im:
             if im.format!="PNG" or im.size!=(320,320):
                 raise RuntimeError("Invalid official radar PNG "+url)
-            # Full-screen on a 480px circular watch; no small inset.
-            full=im.convert("RGBA").resize((480,480),Image.Resampling.LANCZOS)
+            # Older published cache may not yet have relocated timestamps.
+            # Process it once, not twice; never invent synthetic "watch time".
+            radar=im.convert("RGB")
+            if not m.get("frameTimestampRelocated",False):
+                radar=relocate_radar_frame_time(radar)
+            full=radar.resize((480,480),Image.Resampling.LANCZOS)
             full.save(ROOT/("radar-frame-"+str(i)+".png"),"PNG",optimize=True)
     print("Bundled six real animated radar frames; original Buienradar snapshot:",m["generatedAt"])
 if __name__=="__main__":main()

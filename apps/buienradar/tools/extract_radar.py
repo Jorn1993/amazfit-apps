@@ -11,7 +11,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from PIL import Image, ImageSequence
+from PIL import Image, ImageDraw
 import requests
 
 SOURCE = (
@@ -20,6 +20,33 @@ SOURCE = (
     "&renderBranding=False&renderText=True&history=3&forecast=3&skip=1"
 )
 DEST = Path(os.environ.get("RADAR_DIR", "/tmp/buienradar-radar-cache"))
+
+def relocate_radar_frame_time(frame: Image.Image) -> Image.Image:
+    """Move the *rasterized Buienradar frame time*, never substitute watch time.
+    Buienradar draws this text at upper-left of the rectangular image, where
+    the circular watch screen clips it. Extract the bright text pixels and
+    composite them into the circular display's safe area in each GIF frame.
+    """
+    im = frame.convert("RGB")
+    if im.size != (320, 320):
+        raise ValueError("Unexpected Belgian radar map dimensions")
+    src = im.crop((3, 2, 121, 30))
+    alpha = Image.new("L", src.size)
+    pix = src.load()
+    ap = alpha.load()
+    for y in range(src.height):
+        for x in range(src.width):
+            r, g, b = pix[x, y]
+            # White/near-white lettering over dark blue/green radar backing.
+            ap[x, y] = 255 if min(r, g, b) >= 210 and max(r, g, b)-min(r, g, b) < 50 else 0
+    result = im.convert("RGBA")
+    draw = ImageDraw.Draw(result)
+    draw.rounded_rectangle((48, 74, 178, 111), radius=15, fill=(6, 22, 35, 250))
+    letters = Image.new("RGBA", src.size, (245, 250, 255, 0))
+    letters.putalpha(alpha)
+    result.alpha_composite(letters, (55, 79))
+    return result.convert("RGB")
+
 def main():
     response = requests.get(SOURCE, timeout=35, headers={
         "User-Agent": "Personal-Amazfit-Buienradar-Prototype/0.3 (source attribution Buienradar.nl)",
@@ -48,12 +75,13 @@ def main():
             canvas = Image.new("RGBA", (320, 320), (8, 14, 27, 255))
             canvas.alpha_composite(frame, ((320 - frame.width)//2, (320 - frame.height)//2))
             frame = canvas
-        frame.convert("RGB").save(DEST / f"frame-{out_idx}.png",
-                                  "PNG", optimize=True)
+        relocate_radar_frame_time(frame).save(DEST / f"frame-{out_idx}.png",
+                                            "PNG", optimize=True)
         durations.append(int(source.info.get("duration", 500)))
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     manifest = {
-        "version": 1,
+        "version": 2,
+        "frameTimestampRelocated": True,
         "source": "Buienradar.nl",
         "product": "RadarMapRainWebmercatorBE",
         "generatedAt": stamp,
