@@ -57,88 +57,136 @@ async function forecast(location){
  rainCache={key,at:now,payload};
  return {...payload,cached:false};
 }
-// Radar URL originates from Buienradar's own official PNG image service.
-function downloadRadar(){
+// Asynchronous, observable radar pipeline. onRequest never waits for file transfer.
+// Buienradar officially uses RadarMapRainBE for the Belgian radar map.
+const RADAR_MAX_MS=75000;
+let radarState={stage:'idle',error:null,updatedAt:0,requestId:0};
+let radarTask=null,radarBusy=false,radarGeneration=0;
+function stage(name,error=null,requestId=radarGeneration){
+ if(requestId!==radarGeneration)return;
+ radarState={stage:name,error,updatedAt:Date.now(),requestId};
+ try{console.log('[Buienradar radar]',name,error||'');}catch(_){}
+}
+function failAt(label,reason){
+ const text=String(reason&&reason.message||reason||'unknown');
+ throw Error(label+': '+text.slice(0,68));
+}
+function delayFail(promise,ms,label,onTimeout){
  return new Promise((resolve,reject)=>{
+  let settled=false;
+  const timer=setTimeout(()=>{
+   if(settled)return;
+   settled=true;
+   try{if(typeof onTimeout==='function')onTimeout();}catch(_){}
+   reject(Error(label+': timeout'));
+  },ms);
+  Promise.resolve(promise).then(result=>{
+   if(settled)return;
+   settled=true;clearTimeout(timer);resolve(result);
+  },error=>{
+   if(settled)return;
+   settled=true;clearTimeout(timer);reject(error);
+  });
+ });
+}
+function downloadRadar(id){
+ return delayFail(new Promise((resolve,reject)=>{
   if(typeof network==='undefined'||!network.downloader){
-   reject(Error('DOWNLOAD: Zepp downloader niet beschikbaar'));return;
+   reject(Error('DOWNLOAD: Zepp downloader ontbreekt'));return;
   }
   try{
+   // Avoid introducing undocumented query parameters to Buienradar's image API.
    const task=network.downloader.downloadFile({
-    url:RADAR_BE+'&_v='+Math.floor(Date.now()/300000),
+    url:RADAR_BE,
     timeout:22000,
-    filePath:'data://download/buienradar-radar-'+Date.now()+'.png'
+    filePath:'data://download/buienradar-be-'+id+'.png'
    });
+   radarTask=task;
    task.onSuccess=event=>{
-    if(!event||Number(event.statusCode)!==200){
-     reject(Error('DOWNLOAD: HTTP '+String(event&&event.statusCode||'?')));return;
+    const status=Number(event&&event.statusCode);
+    if(status!==200){
+     reject(Error('DOWNLOAD: HTTP '+String(status||'?')));return;
     }
-    const path=event.filePath||event.tempFilePath;
-    if(!path){reject(Error('DOWNLOAD: geen bestand ontvangen'));return;}
-    resolve(path);
+    const file=event.filePath||event.tempFilePath;
+    if(!file){reject(Error('DOWNLOAD: leeg bestandspad'));return;}
+    resolve(file);
    };
-   task.onFail=event=>reject(Error('DOWNLOAD: netwerkfout '+String(event&&event.code||'')));
-  }catch(_){reject(Error('DOWNLOAD: Zepp downloadfout'));}
- });
+   task.onFail=ev=>{
+    reject(Error('DOWNLOAD: '+String(ev&&ev.message||ev&&ev.code||'netwerkfout')));
+   };
+  }catch(e){reject(Error('DOWNLOAD: '+String(e&&e.message||e).slice(0,50)));}
+ }),28000,'DOWNLOAD',()=>{if(radarTask&&radarTask.cancel)radarTask.cancel();});
 }
-function waitForTransfer(file){
- return new Promise((resolve,reject)=>{
+function waitTransfer(file){
+ return delayFail(new Promise((resolve,reject)=>{
   if(!file||typeof file.on!=='function'){
-   reject(Error('OVERDRACHT: geen bestandsobject'));return;
+   reject(Error('TRANSFER: geen Zepp FileObject'));return;
   }
-  let done=false;
-  const timeout=setTimeout(()=>{
-   if(done)return;done=true;
-   try{if(typeof file.cancel==='function')file.cancel();}catch(_){}
-   reject(Error('OVERDRACHT: time-out'));
-  },35000);
-  const finish=(error)=>{
-   if(done)return;done=true;clearTimeout(timeout);
-   if(error)reject(Error(error));else resolve();
+  const check=s=>{
+   if(s==='transferred')resolve();
+   else if(s==='error'||s==='canceled')reject(Error('TRANSFER: '+s));
   };
-  file.on('change',event=>{
-   const state=(event&&event.data&&event.data.readyState)||file.readyState;
-   if(state==='transferred')finish();
-   else if(state==='error'||state==='canceled')finish('OVERDRACHT: '+state);
-  });
-  if(file.readyState==='transferred')finish();
- });
+  file.on('change',ev=>check(ev&&ev.data&&ev.data.readyState||file.readyState));
+  check(file.readyState);
+ }),35000,'TRANSFER',()=>{try{if(file&&file.cancel)file.cancel();}catch(_){}});
 }
-async function sendRadar(){
- if(radarBusy)throw Error('Radaroverdracht is al bezig');
- // Always transfer to the CURRENT watch app session; a previous transfer is not a cache hit.
- radarBusy=true;
+async function runRadar(id){
  try{
-  const path=await downloadRadar();
+  stage('download',null,id);
+  const path=await downloadRadar(id);
+  if(id!==radarGeneration)return;
+  stage('convert',null,id);
   if(typeof image==='undefined'||typeof image.convert!=='function')
-   throw Error('OMZETTEN: Zepp afbeeldingsconverter ontbreekt');
-  let converted;
-  try{converted=await image.convert({filePath:path});}
-  catch(_){throw Error('OMZETTEN: radarbeelddownload is geen bruikbare PNG');}
+   throw Error('CONVERT: image.convert ontbreekt in Zepp');
+  const converted=await delayFail(
+   image.convert({filePath:path,targetFilePath:'data://download/buienradar-be-'+id+'.img'}),
+   12000,'CONVERT');
   if(!converted||!converted.targetFilePath)
-   throw Error('OMZETTEN: geen uitvoerbestand');
+   throw Error('CONVERT: geen uitvoerbestand');
+  stage('transfer',null,id);
   if(typeof transferFile==='undefined'||typeof transferFile.getOutbox!=='function')
-   throw Error('OVERDRACHT: Zepp telefoonservice ontbreekt');
+   throw Error('TRANSFER: Side Service transferFile ontbreekt');
   const outbox=transferFile.getOutbox();
   if(!outbox||typeof outbox.enqueueFile!=='function')
-   throw Error('OVERDRACHT: wachtrij niet beschikbaar');
-  const file=outbox.enqueueFile(converted.targetFilePath,
-   {kind:'buienradar-radar',updatedAt:Date.now()});
-  radarTransfer=file;
-  await waitForTransfer(file);
-  radarLastDelivered=Date.now();
-  return {ok:true,transferred:true};
- }finally{radarBusy=false;radarTransfer=null;}
+   throw Error('TRANSFER: outbox ontbreekt');
+  const file=outbox.enqueueFile(converted.targetFilePath,{
+   kind:'buienradar-radar',requestId:id
+  });
+  await waitTransfer(file);
+  if(id===radarGeneration)stage('transferred',null,id);
+ }catch(e){
+  stage('failed',String(e&&e.message||e).slice(0,100),id);
+ }finally{
+  radarTask=null;radarBusy=false;
+ }
+}
+function startRadar(){
+ if(radarBusy)return {...radarState,ok:true};
+ radarGeneration++;
+ radarBusy=true;
+ const id=radarGeneration;
+ stage('starting',null,id);
+ void runRadar(id);
+ return {...radarState,ok:true};
+}
+function radarStatus(){
+ const state={...radarState,ok:true};
+ if(radarBusy&&Date.now()-state.updatedAt>RADAR_MAX_MS){
+  stage('failed','RADAR: geen reactie na 75 seconden');
+  radarBusy=false;
+  return {...radarState,ok:true};
+ }
+ return state;
 }
 AppSideService(BaseSideService({
  async onRequest(req,res){
   try{
    if(!req)throw Error('Missing request');
    if(req.method==='radar.refresh'){
-    // Return only after an actual transfer or a concrete failure.
-    try{res(null,await sendRadar());}
-    catch(e){res(null,{ok:false,error:String(e&&e.message||e).slice(0,100)});}
-    return;
+    res(null,startRadar());return;
+   }
+   if(req.method==='radar.status'){
+    res(null,radarStatus());return;
    }
    if(req.method!=='rain.forecast')
     throw Error('Unsupported request');

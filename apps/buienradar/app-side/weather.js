@@ -35,6 +35,6 @@ export function nextHourRain(points){
   sum+(Number.isFinite(p.mmh)?p.mmh:0)*5/60,0)*10)/10;
 }
 export const RADAR_BE=
- 'https://image.buienradar.nl/2.0/image/single/RadarMapRainWebmercatorBE'+
+ 'https://image.buienradar.nl/2.0/image/single/RadarMapRainBE'+
  '?height=320&width=320&renderBackground=True'+
- '&renderBranding=False&renderText=False';
+ '&renderBranding=False&renderText=True';

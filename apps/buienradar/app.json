@@ -5,8 +5,8 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.2.1",
-      "code": 3
+      "name": "0.2.2",
+      "code": 4
     },
     "vender": "Personal prototype",
     "description": "Drie pagina's, officiële neerslagradar en swipe-links regenwidget",
