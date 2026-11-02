@@ -275,9 +275,9 @@ Page(BasePage({
  draw(){
   if(this.disposed)return;
   const d=this.rain||EMPTY;
-  if(!d.ok||!d.summary||!Array.isArray(d.points)){
-   this.rainState.setProperty(ui.prop.TEXT,'GEEN GEGEVENS');
-   this.rainDetail.setProperty(ui.prop.TEXT,'Open Zepp voor een update');
+  if(!forecastFresh(d)){
+   this.rainState.setProperty(ui.prop.TEXT,'GEEN RECENTE DATA');
+   this.rainDetail.setProperty(ui.prop.TEXT,'Open de app opnieuw');
    this.temp.setProperty(ui.prop.TEXT,'--°');
    this.amount.setProperty(ui.prop.TEXT,'-- mm');
    this.wind.setProperty(ui.prop.TEXT,'-- km/u');
@@ -294,11 +294,7 @@ Page(BasePage({
   this.city.setProperty(ui.prop.TEXT,received.name||'Antwerpen');
   this.placeMarker();
   this.scheduleRainAlert(d);
-  this.rainState.setProperty(ui.prop.TEXT,d.summary.headline);
-  this.rainState.setProperty(ui.prop.COLOR,
-   d.summary.rainingNow?C.orange:C.white);
-  this.rainDetail.setProperty(ui.prop.TEXT,d.summary.detail);
-  this.renderBars();
+  this.renderForecast();
   const w=d.station||{};
   this.temp.setProperty(ui.prop.TEXT,shown(w.temperature,'°'));
   this.amount.setProperty(ui.prop.TEXT,
@@ -306,7 +302,7 @@ Page(BasePage({
   this.wind.setProperty(ui.prop.TEXT,
    (w.direction||'--')+'  '+shown(w.windKmh,' km/u'));
   this.gusts.setProperty(ui.prop.TEXT,
-   'Vlagen '+shown(w.gustKmh,' km/u'));
+   valid(w.gustKmh)?'Vlagen '+Math.round(w.gustKmh)+' km/u':'');
   this.station.setProperty(ui.prop.TEXT,'');
   let src='weather-cloud.png';
   const description=String(w.weatherDescription||'').toLowerCase();
@@ -318,9 +314,9 @@ Page(BasePage({
  },
  storeShortcut(d){
   try{
-   storage.setItem('buienradar.shortcut',JSON.stringify({
-    location:d.location.name,headline:d.summary.headline,
-    detail:d.summary.detail,at:Date.now()
+   if(!forecastFresh(d))return;
+   storage.setItem('buienradar.forecast.v2',JSON.stringify({
+    at:d.updatedAt,location:d.location.name,summary120:d.summary2h
    }));
   }catch(_){}
  },
@@ -330,7 +326,7 @@ Page(BasePage({
   try{
    const result=await this.phone({method:'rain.forecast',params:{}},25000);
    if(this.disposed)return;
-   this.rain=result&&result.ok===true?result:EMPTY;
+   this.rain=forecastFresh(result)?result:EMPTY;
    this.draw();
    if(this.rain.ok)this.storeShortcut(this.rain);
   }catch(_){
@@ -400,16 +396,34 @@ Page(BasePage({
   });
   this.placeMarker();
  },
+ updateRadarClock(){
+   if(!this.radarClock||!this.watchTime)return;
+   const hours=String(this.watchTime.getHours()).padStart(2,'0');
+   const minutes=String(this.watchTime.getMinutes()).padStart(2,'0');
+   const clock=hours+':'+minutes;
+   if(this.lastClock!==clock){
+    this.lastClock=clock;this.radarClock.setProperty(ui.prop.TEXT,clock);
+   }
+ },
+ renderForecast(){
+   const sum=forecastFresh(this.rain)?
+    (this.horizon===1?this.rain.summary1h:this.rain.summary2h):null;
+   this.rainState.setProperty(ui.prop.TEXT,headline(sum));
+   this.rainState.setProperty(ui.prop.COLOR,!sum?C.muted:
+    sum.state==='raining'?C.orange:sum.state==='incoming'?C.blue:C.white);
+   this.rainDetail.setProperty(ui.prop.TEXT,amount(sum,this.horizon));
+   this.renderBars();
+ },
  setHorizon(hours){
   this.horizon=hours===1?1:2;
   this.horizonOne.setProperty(ui.prop.MORE,{x:119,y:109,w:113,h:41,
    normal_color:this.horizon===1?0x286b8f:0x19384a});
   this.horizonTwo.setProperty(ui.prop.MORE,{x:246,y:109,w:113,h:41,
    normal_color:this.horizon===2?0x286b8f:0x19384a});
-  this.renderBars();
+  this.renderForecast();
  },
  renderBars(){
-  const points=this.rain&&Array.isArray(this.rain.points)?this.rain.points:[];
+  const points=forecastFresh(this.rain)?this.rain.points:[];
   const count=this.horizon===1?12:24;
   const nums=points.slice(0,count).map(p=>valid(p.mmh)?p.mmh:0);
   const mx=Math.max(1,...nums);
@@ -429,7 +443,7 @@ Page(BasePage({
   let prefs;
   try{prefs=JSON.parse(storage.getItem('buienradar.alert')||'null');}catch(_){}
   const prior=Number(storage.getItem('buienradar.alert-alarm-id')||0);
-  if(!prefs||!prefs.enabled||!d||!d.ok||!Array.isArray(d.points)){
+  if(!prefs||!prefs.enabled||!forecastFresh(d)){
    if(prior>0){try{cancelAlarm(prior);}catch(_){}}
    storage.setItem('buienradar.alert-alarm-id','0');
    this.lastAlertKey=null;
