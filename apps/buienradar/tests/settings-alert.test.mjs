@@ -82,3 +82,16 @@ test('User can explicitly send a test notification without waiting for rainfall'
  const w=watchSettings();w.page.testNotification();
  assert.equal(w.page.status.values.text,'Test naar meldingen gestuurd');
 });
+
+test('Watch setting action buttons fully fit round display',()=>{
+ const {widgets}=watchSettings();
+ const controls=widgets.filter(w=>w.type===2&&['TEST','OPSLAAN'].includes(w.values.text));
+ assert.equal(controls.length,2);
+ for(const {values:r} of controls){
+  for(const [x,y] of [[r.x,r.y],[r.x+r.w,r.y],
+   [r.x,r.y+r.h],[r.x+r.w,r.y+r.h]]){
+   assert.ok(Math.hypot(x-240,y-240)<=240,
+    'Action clipped by circular screen: '+r.text);
+  }
+ }
+});

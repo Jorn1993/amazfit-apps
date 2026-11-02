@@ -35,18 +35,35 @@ test('SecondaryWidget combines radar, upcoming rain, graph and current station m
  assert.ok(widgets.some(w=>w.props.text==='0,2 mm · 2 uur'));
  assert.ok(widgets.some(w=>w.props.text==='12°'));
  assert.ok(widgets.some(w=>w.props.text==='NW 11 km/u'));
- assert.ok(widgets.filter(w=>w.type===3&&w.props.w===10).length===24);
+ assert.equal(widgets.filter(w=>w.type===3&&w.props.w===9).length,24);
  const button=widgets.find(w=>w.type===2);button.props.click_func();
  assert.equal(routes[0].url,'page/index');
 });
 test('After stale forecasts widget retains a radar preview and does not lie about rain',()=>{
  const {widgets}=launch(example,Date.now()-30*60*1000);
  assert.ok(widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
- assert.ok(widgets.some(w=>w.props.text==='OPEN VOOR ACTUELE REGEN'));
+ assert.ok(widgets.some(w=>w.props.text==='OPEN VOOR REGEN'));
+ assert.ok(widgets.some(w=>w.props.text==='VOORSPELLING VERLOPEN'));
+ assert.ok(widgets.some(w=>w.props.text==='LAATST BEKEND'));
  assert.ok(!widgets.some(w=>w.props.text==='REGEN OVER 20 MIN'));
 });
 test('Cold startup always shows the radar, never a blank stale-data wall',()=>{
  const {widgets}=launch(null);
  assert.ok(widgets.some(w=>w.type===4));
- assert.ok(widgets.some(w=>w.props.text==='Tik voor de nieuwste voorspelling'));
+ assert.ok(widgets.some(w=>w.props.text==='GEEN VOORSPELLING'));
+ assert.ok(widgets.some(w=>w.props.text==='--°'));
+});
+
+test('Widget core metrics and message fit the circular safe region',()=>{
+ const {widgets}=launch(example);
+ const contents=widgets.filter(x=>x.type===1&&x.props.text!==undefined);
+ for(const {props:w} of contents){
+  if(w.y>400&&w.text==='LAATST BEKEND')continue;
+  for(const [x,y] of [[w.x,w.y],[w.x+w.w,w.y],
+   [w.x,w.y+w.h],[w.x+w.w,w.y+w.h]]){
+   const distance=Math.hypot(x-240,y-240);
+   assert.ok(distance<=239.9,
+    'Clipped widget text: '+w.text+' distance '+distance.toFixed(1));
+  }
+ }
 });

@@ -5,11 +5,11 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.7.0",
-      "code": 9
+      "name": "0.7.1",
+      "code": 10
     },
     "vender": "Personal prototype",
-    "description": "Official radar frame times, combined weather widget, on-watch test alerts",
+    "description": "Round-safe cards and settings with compact three-in-one widget",
     "icon": "icon.png"
   },
   "permissions": [
