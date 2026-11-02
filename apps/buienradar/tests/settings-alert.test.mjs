@@ -15,7 +15,7 @@ function watchSettings({connected=true}={}){
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(code,{ui,Page:x=>page=x,BasePage:x=>x,
   back:()=>backCalls.push('back'),
-  LocalStorage:class{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},
+  LocalStorage:class{getItem(k){return saved.get(k);}setItem(k,v){saved.set(k,v);}},
   JSON,Number,String,Math});
  page.messaging={request:async req=>{
   if(!connected)throw Error('offline');
@@ -56,7 +56,7 @@ function alertService(pref,options){
  const code=fs.readFileSync(new URL('../app-service/rain-alert.js',import.meta.url),'utf8')
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(code,{AppService:x=>service=x,notify:x=>{alerts.push(x);return 1;},
-  LocalStorage:class{getItem:k=>storage.get(k)},
+  LocalStorage:class{getItem(k){return storage.get(k);}},
   JSON,Number,String,Date,Math});
  service.onInit(JSON.stringify(options));
  return alerts;
