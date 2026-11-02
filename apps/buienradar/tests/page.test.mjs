@@ -33,7 +33,7 @@ function launch(connected=true){
  vm.runInNewContext(source,{ui,Page:v=>page=v,BasePage:v=>v,
   setScrollMode:v=>{scroll=v;return 1;},
   SCROLL_MODE_SWIPER_HORIZONTAL:'SWIPER_HORIZONTAL',
-  TransferFile,
+  TransferFile,push:()=>{},setAlarm:()=>1,cancelAlarm:()=>0,
   LocalStorage:class{getItem(k){return cache.get(k);}setItem(k,v){cache.set(k,v);}},
   setInterval:()=>11,clearInterval:()=>{stopped++;},
   setTimeout:()=>7,clearTimeout:()=>{},
@@ -102,9 +102,9 @@ test('Useful third page: large temperature, precipitation and wind with genuine 
  assert.equal(t.page.temp.values.text_size,62);
  assert.equal(t.page.amount.values.text,'0.2 mm');
  assert.match(t.page.wind.values.text,/NW/);
- assert.match(t.page.station.values.text,/Deurne/);
+ assert.equal(t.page.station.values.text,'');
  assert.equal(t.page.weatherIcon.values.more.src,'weather-cloud.png');
- assert.ok(t.page.parts[2].some(x=>x.values.src==='buienradar-logo.png'));
+ assert.ok(!t.page.parts[2].some(x=>x.values.src==='buienradar-logo.png'));
  assert.ok(t.page.parts[2].some(x=>x.values.src==='weather-drop.png'));
  t.page.onDestroy();
 });
