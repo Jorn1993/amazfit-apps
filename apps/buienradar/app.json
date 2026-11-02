@@ -5,15 +5,16 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.1.0",
-      "code": 1
+      "name": "0.2.0",
+      "code": 2
     },
     "vender": "Personal prototype",
-    "description": "Two-hour precipitation forecast powered by Buienradar",
+    "description": "3-screen rain radar, rainfall chart and forecast with shortcut card",
     "icon": "icon.png"
   },
   "permissions": [
-    "device:os.geolocation"
+    "device:os.geolocation",
+    "device:os.local_storage"
   ],
   "runtime": {
     "apiVersion": {
@@ -35,6 +36,18 @@
         },
         "setting": {
           "path": "setting/index"
+        },
+        "app-widget": {
+          "widgets": [
+            {
+              "path": "app-widget/index",
+              "icon": "icon.png",
+              "name": "Buienradar",
+              "runtime": {
+                "type": "js"
+              }
+            }
+          ]
         }
       },
       "platforms": [
