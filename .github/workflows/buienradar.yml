@@ -35,6 +35,8 @@ jobs:
           node --check apps/buienradar/page/index.js
           node --check apps/buienradar/app-side/index.js
           node --check apps/buienradar/app-side/rain.js
+          node --check apps/buienradar/app-side/weather.js
+          node --check apps/buienradar/app-widget/index.js
           node --check apps/buienradar/setting/index.js
           node --test apps/buienradar/tests/*.test.mjs
       - name: Build Zepp mini program
