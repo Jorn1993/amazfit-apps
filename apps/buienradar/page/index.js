@@ -136,7 +136,7 @@ Page(BasePage({
    txt(1,85,386,69,29,'NU',19,C.white),
    txt(1,160,386,78,29,'30 min',18,C.muted),
    txt(1,251,386,78,29,'60 min',18,C.muted),
-   txt(1,337,386,74,29,'2 uur',18,C.muted)
+   txt(1,327,386,68,29,'2 uur',18,C.muted)
   ];
 
   // PAGE 3 — one hero and two balanced glance cards. No text below y=401.
