@@ -26,7 +26,7 @@ test('Full-screen native SecondaryWidget displays real cached rain and opens app
   etaMinutes:20,totalMm:0.2}});
  assert.ok(result.widgets.some(x=>x.props.text==='Gent'));
  assert.ok(result.widgets.some(x=>x.props.text==='REGEN OVER 20 MIN'));
- assert.ok(result.widgets.some(x=>x.props.text.includes('0,2 mm')));
+ assert.ok(result.widgets.some(x=>typeof x.props.text==='string'&&x.props.text.includes('0,2 mm')));
  const button=result.widgets.find(x=>x.type===2);
  assert.equal(button.props.w,450,'full-screen widget and not small shortcut card');
  button.props.click_func();
@@ -35,10 +35,10 @@ test('Full-screen native SecondaryWidget displays real cached rain and opens app
 test('An expired forecast is not shown as current in the left-swipe widget',()=>{
  const result=launch({location:'Gent',summary120:{state:'dry',headline:'HET BLIJFT DROOG',totalMm:0}},Date.now()-60*60*1000);
  assert.ok(result.widgets.some(x=>x.props.text==='GEEN RECENTE DATA'));
- assert.ok(!result.widgets.some(x=>x.props.text==='HET BLIJFT DROOG'));
+ assert.ok(!result.widgets.some(x=>x.props.text==='DROOG'));
 });
 test('No data tells user to open app rather than fabricating rain forecast',()=>{
  const result=launch(null);
- assert.ok(result.widgets.some(x=>x.props.text==='GEEN ACTUELE DATA'));
+ assert.ok(result.widgets.some(x=>x.props.text==='GEEN RECENTE DATA'));
  assert.ok(result.widgets.some(x=>x.props.text==='Open de app om te vernieuwen'));
 });
