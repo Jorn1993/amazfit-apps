@@ -2,68 +2,51 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-
-function launch(saved,at=Date.now()){
- let component;const widgets=[],routes=[];
- const cache=new Map();
- if(saved)cache.set('buienradar.overview.v3',JSON.stringify({...saved,at}));
+function launch(saved,stamp=Date.now()){
+ let component;const widgets=[],routes=[],cache=new Map();
+ if(saved)cache.set('buienradar.overview.v3',JSON.stringify({...saved,at:stamp}));
  const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3,IMG:4},
-  align:{CENTER_H:1},text_style:{WRAP:1},
-  createWidget(type,props){
-   const result={type,props};widgets.push(result);return result;
+  align:{CENTER_H:1},text_style:{ELLIPSIS:1},createWidget(type,props){
+   const w={type,props};widgets.push(w);return w;
   }};
- const source=readFileSync(new URL('../secondary-widget/index.js',import.meta.url),'utf8')
+ const src=readFileSync(new URL('../secondary-widget/index.js',import.meta.url),'utf8')
   .replace(/^import .*;\s*$/gm,'');
- vm.runInNewContext(source,{
-  ui,SecondaryWidget:v=>{component=v;},push:value=>routes.push(value),
+ vm.runInNewContext(src,{ui,SecondaryWidget:x=>component=x,push:x=>routes.push(x),
   LocalStorage:class{getItem(k){return cache.get(k);}},
-  Date,Number,String,Math,JSON
- });
- component.build();
- return {widgets,routes};
+  Date,Math,JSON,Number,String});
+ component.build();return {widgets,routes};
 }
-const example={location:'Gent',
- summary120:{state:'incoming',etaMinutes:20,totalMm:0.2},
- temperature:12,windKmh:11,direction:'NW',
- points:Array.from({length:24},(_,i)=>({mmh:i<5?0:i/12}))
-};
-test('SecondaryWidget combines radar, upcoming rain, graph and current station metrics',()=>{
- const {widgets,routes}=launch(example);
- assert.ok(widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
- assert.ok(widgets.some(w=>w.props.text==='Gent'));
- assert.ok(widgets.some(w=>w.props.text==='REGEN OVER 20 MIN'));
- assert.ok(widgets.some(w=>w.props.text==='0,2 mm  /  2 uur'));
- assert.ok(widgets.some(w=>w.props.text==='12°'));
- assert.ok(widgets.some(w=>w.props.text==='NW 11 km/u'));
- assert.equal(widgets.filter(w=>w.type===3&&w.props.w===8).length,24);
- const button=widgets.find(w=>w.type===2);button.props.click_func();
- assert.equal(routes[0].url,'page/index');
+const example={location:'Antwerpen',
+ summary120:{state:'dry',totalMm:0,etaMinutes:null},
+ temperature:9,windKmh:14,direction:'NNO',
+ points:Array.from({length:24},()=>({mmh:0}))};
+test('Widget shows unobstructed radar with one slim clickable status bar',()=>{
+ const t=launch(example);
+ const img=t.widgets.find(w=>w.type===4);
+ assert.equal(img.props.w,480);assert.equal(img.props.h,480);
+ assert.equal(t.widgets.filter(w=>w.type===3).length,1,'no huge opaque data panel');
+ const bottom=t.widgets.find(w=>w.type===2&&w.props.y>300);
+ assert.ok(bottom.props.h<=80);
+ assert.match(bottom.props.text,/Droog/);
+ bottom.props.click_func();assert.equal(t.routes[0].url,'page/index');
 });
-test('After stale forecasts widget retains a radar preview and does not lie about rain',()=>{
- const {widgets}=launch(example,Date.now()-30*60*1000);
- assert.ok(widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
- assert.ok(widgets.some(w=>w.props.text==='OPEN BUIENRADAR'));
- assert.ok(widgets.some(w=>w.props.text==='LAATSTE VERWACHTING'));
- assert.ok(widgets.some(w=>w.props.text==='LAATSTE VERWACHTING'));
- assert.ok(!widgets.some(w=>w.props.text==='REGEN OVER 20 MIN'));
+test('Widget stale state never describes old forecast as current',()=>{
+ const t=launch(example,Date.now()-25*60000);
+ const bottom=t.widgets.find(w=>w.type===2&&w.props.y>300);
+ assert.match(bottom.props.text,/Laatste radar/);
+ assert.ok(!bottom.props.text.includes('Droog'));
 });
-test('Cold startup always shows the radar, never a blank stale-data wall',()=>{
- const {widgets}=launch(null);
- assert.ok(widgets.some(w=>w.type===4));
- assert.ok(widgets.some(w=>w.props.text==='OPEN VOOR NIEUWE DATA'));
- assert.ok(widgets.some(w=>w.props.text==='--°'));
+test('Cold start still displays radar without fake readings',()=>{
+ const t=launch(null);
+ assert.ok(t.widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
+ assert.ok(t.widgets.some(w=>w.type===2&&w.props.text.includes('Laatste radar')));
 });
-
-test('Widget core metrics and message fit the circular safe region',()=>{
- const {widgets}=launch(example);
- const contents=widgets.filter(x=>x.type===1&&x.props.text!==undefined);
- for(const {props:w} of contents){
-  if(w.y>400&&w.text==='LAATST BEKEND')continue;
-  for(const [x,y] of [[w.x,w.y],[w.x+w.w,w.y],
-   [w.x,w.y+w.h],[w.x+w.w,w.y+w.h]]){
-   const distance=Math.hypot(x-240,y-240);
-   assert.ok(distance<=239.9,
-    'Clipped widget text: '+w.text+' distance '+distance.toFixed(1));
-  }
+test('Widget labels and touch surfaces remain inside circular safe zone',()=>{
+ const t=launch(example);
+ for(const w of t.widgets.filter(w=>w.type===2||w.type===1)){
+  const r=w.props;
+  for(const [x,y] of [[r.x,r.y],[r.x+r.w,r.y],
+   [r.x,r.y+r.h],[r.x+r.w,r.y+r.h]])
+   assert.ok(Math.hypot(x-240,y-240)<=239.9,`Clipped: ${r.text}`);
  }
 });
