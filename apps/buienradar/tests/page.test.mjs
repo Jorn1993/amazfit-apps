@@ -28,7 +28,7 @@ function launch(available=true){
  const source=fs.readFileSync(new URL('../page/index.js',import.meta.url),'utf8')
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(source,{ui,Page:v=>page=v,BasePage:v=>v,
-  TransferFile,LocalStorage:class{getItem:k=>dataStore.get(k),setItem:(k,v)=>dataStore.set(k,v)},
+  TransferFile,LocalStorage:class{getItem(k){return dataStore.get(k);}setItem(k,v){dataStore.set(k,v);}},
   onGesture:({callback})=>{gesture=callback;},offGesture:()=>{disconnected=true;},
   GESTURE_LEFT:5,GESTURE_RIGHT:6,
   setInterval:()=>1,clearInterval:()=>{stopped=true;},
