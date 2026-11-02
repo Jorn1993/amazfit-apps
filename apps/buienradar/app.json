@@ -5,11 +5,11 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.9.0",
-      "code": 12
+      "name": "0.9.1",
+      "code": 13
     },
     "vender": "Personal prototype",
-    "description": "Circular native redesign, on-watch locations and alerts",
+    "description": "Premium circular radar-first weather app with on-watch settings",
     "icon": "icon.png"
   },
   "permissions": [

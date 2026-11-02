@@ -101,3 +101,25 @@ test('An enabled alert can fire after the app exits but is never continuous moni
  assert.equal(alertService({enabled:false},opts).length,0);
  assert.equal(alertService({enabled:true},{...opts,plannedAt:now-4*3600000}).length,0);
 });
+
+test('Alarm callback accepts Zepp wrapper with param string',()=>{
+ const now=Date.now();
+ // Direct invocation test for wrapper form; expected to be a single delivery.
+ let called=0,svc;
+ const source=readFileSync(new URL('../app-service/rain-alert.js',import.meta.url),'utf8')
+  .replace(/^import .*;\s*$/gm,'');
+ vm.runInNewContext(source,{
+  AppService:x=>svc=x,notify:()=>{called++;return 1;},
+  LocalStorage:class{getItem(k){return k==='buienradar.alert'?
+   JSON.stringify({enabled:true,lead:15}):null;}},
+  JSON,Number,String,Date,Math,console:{log(){}}
+ });
+ svc.onInit({param:JSON.stringify({
+  place:'Antwerpen',onsetAt:now+900000,plannedAt:now-5000,lead:15
+ })});
+ assert.equal(called,1);
+});
+test('The rain-alert service has no invalid notification action pointing to a page',()=>{
+ const source=readFileSync(new URL('../app-service/rain-alert.js',import.meta.url),'utf8');
+ assert.ok(!source.includes("file:'page/index'"));
+});

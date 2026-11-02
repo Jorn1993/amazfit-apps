@@ -38,6 +38,7 @@ jobs:
           node --check apps/buienradar/app-side/weather.js
           node --check apps/buienradar/secondary-widget/index.js
           node --check apps/buienradar/page/settings.js
+          node --check apps/buienradar/page/locations.js
           node --check apps/buienradar/app-service/rain-alert.js
           node --test apps/buienradar/tests/*.test.mjs
       - name: Build Zepp mini program with last verified radar animation
