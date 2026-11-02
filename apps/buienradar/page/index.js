@@ -397,16 +397,25 @@ Page(BasePage({
   let prefs;
   try{prefs=JSON.parse(storage.getItem('buienradar.alert')||'null');}catch(_){}
   const prior=Number(storage.getItem('buienradar.alert-alarm-id')||0);
-  if(prior>0){try{cancelAlarm(prior);}catch(_){}}
-  storage.setItem('buienradar.alert-alarm-id','0');
-  if(!prefs||!prefs.enabled||!d||!d.ok||!Array.isArray(d.points))return;
+  if(!prefs||!prefs.enabled||!d||!d.ok||!Array.isArray(d.points)){
+   if(prior>0){try{cancelAlarm(prior);}catch(_){}}
+   storage.setItem('buienradar.alert-alarm-id','0');
+   this.lastAlertKey=null;
+   return;
+  }
   // Raintext is 5-minute nowcast only; no claim of long-range live monitoring.
   const onset=d.points.findIndex(p=>valid(p.mmh)&&p.mmh>=0.03);
-  if(onset<=0)return;
+  if(onset<=0){
+   if(prior>0){try{cancelAlarm(prior);}catch(_){}}
+   storage.setItem('buienradar.alert-alarm-id','0');
+   this.lastAlertKey=null;return;
+  }
   const lead=[5,15,30].includes(prefs.lead)?prefs.lead:15;
   const onsetAt=Date.now()+onset*5*60000;
   const key=String(Math.round(onsetAt/(5*60000)))+'-'+(d.location&&d.location.name);
-  if(key===this.lastAlertKey)return;
+  if(key===this.lastAlertKey&&prior>0)return;
+  if(prior>0){try{cancelAlarm(prior);}catch(_){}}
+  storage.setItem('buienradar.alert-alarm-id','0');
   const sec=Math.max(3,Math.round((onsetAt-Date.now()-lead*60000)/1000));
   if(sec>2*3600)return;
   const id=setAlarm({url:'app-service/rain-alert',delay:sec,store:true,
