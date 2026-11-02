@@ -59,7 +59,7 @@ AppSettingsPage({
    'Buienradar voor Balance 2 · v'+VERSION+' · Onafhankelijke testapp'));
   add(Text({paragraph:true,style:{color:muted,fontSize:'13px'}},
    'Nieuwere versies worden automatisch gebouwd op GitHub. Developer-installaties via QR moeten opnieuw gescand worden; Zepp biedt hiervoor geen bevestigde stille update.'));
-  add(Link({source:'https://github.com/Jorn1993/amazfit-apps/tree/main/apps/buienradar/public/'}),
+  add(Link({source:'https://github.com/Jorn1993/amazfit-apps/tree/main/apps/buienradar/public/'},
    [Text({},'Update en installatie-QR')]));
   add(Text({paragraph:true,style:{color:muted,fontSize:'12px'}},
    'Bron: Buienradar.nl. Gebruik in mobiele apps vereist toestemming van Buienradar.'));
