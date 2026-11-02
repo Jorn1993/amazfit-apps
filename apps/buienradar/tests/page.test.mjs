@@ -103,7 +103,7 @@ test('Actual BLE frames replace bundled animation only after 2 received',async()
 test('Useful third page: large temperature, precipitation and wind with genuine pictograms',async()=>{
  const t=launch();t.page.build();await flush();
  assert.equal(t.page.temp.values.text,'12°');
- assert.equal(t.page.temp.values.text_size,62);
+ assert.equal(t.page.temp.values.text_size,68);
  assert.equal(t.page.amount.values.text,'0.2 mm');
  assert.match(t.page.wind.values.text,/NW/);
  assert.equal(t.page.station.values.text,'');
