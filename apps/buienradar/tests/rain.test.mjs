@@ -28,7 +28,7 @@ test('Detects rain and onset without forecasting imaginary values',()=>{
  wet.fill(109);
  result=describe(parseRaintext(make(wet)));
  assert.equal(result.headline,'HET REGENT');
- assert.match(result.detail,/geen droge periode/);
+ assert.match(result.detail,/blijft aanhouden/);
 });
 test('Rejects truncated, malformed, or irregular responses',()=>{
  assert.throws(()=>parseRaintext('000|12:00'));
