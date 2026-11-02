@@ -3,42 +3,50 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-// SecondaryWidget: full-screen tile reached by swiping LEFT from watchface.
-// AppWidget was a different, incorrect right-swipe shortcut card.
-function launch(saved,stamp=Date.now()){
- let page=null;const widgets=[],routes=[];
- const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3},align:{CENTER_H:1},
-  text_style:{WRAP:1},
-  createWidget(type,props){widgets.push({type,props});return {type,props};}};
- const src=readFileSync(new URL('../secondary-widget/index.js',import.meta.url),'utf8')
+function launch(saved,at=Date.now()){
+ let component;const widgets=[],routes=[];
+ const cache=new Map();
+ if(saved)cache.set('buienradar.overview.v3',JSON.stringify({...saved,at}));
+ const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3,IMG:4},
+  align:{CENTER_H:1},text_style:{WRAP:1},
+  createWidget(type,props){
+   const result={type,props};widgets.push(result);return result;
+  }};
+ const source=readFileSync(new URL('../secondary-widget/index.js',import.meta.url),'utf8')
   .replace(/^import .*;\s*$/gm,'');
- vm.runInNewContext(src,{
-  ui,SecondaryWidget:v=>{page=v;},
-  push:x=>routes.push(x),
-  LocalStorage:class{getItem(){return saved?JSON.stringify({...saved,at:stamp}):null;}},
-  Date,Number,String,Math,JSON,
- },{filename:'secondary-widget/index.js'});
- page.build();
+ vm.runInNewContext(source,{
+  ui,SecondaryWidget:v=>{component=v;},push:value=>routes.push(value),
+  LocalStorage:class{getItem(k){return cache.get(k);}},
+  Date,Number,String,Math,JSON
+ });
+ component.build();
  return {widgets,routes};
 }
-test('Full-screen native SecondaryWidget displays real cached rain and opens app',()=>{
- const result=launch({location:'Gent',summary120:{state:'incoming',headline:'REGEN OP KOMST',
-  etaMinutes:20,totalMm:0.2}});
- assert.ok(result.widgets.some(x=>x.props.text==='Gent'));
- assert.ok(result.widgets.some(x=>x.props.text==='REGEN OVER 20 MIN'));
- assert.ok(result.widgets.some(x=>typeof x.props.text==='string'&&x.props.text.includes('0,2 mm')));
- const button=result.widgets.find(x=>x.type===2);
- assert.equal(button.props.w,452,'full-screen widget and not small shortcut card');
- button.props.click_func();
- assert.equal(result.routes[0].url,'page/index');
+const example={location:'Gent',
+ summary120:{state:'incoming',etaMinutes:20,totalMm:0.2},
+ temperature:12,windKmh:11,direction:'NW',
+ points:Array.from({length:24},(_,i)=>({mmh:i<5?0:i/12}))
+};
+test('SecondaryWidget combines radar, upcoming rain, graph and current station metrics',()=>{
+ const {widgets,routes}=launch(example);
+ assert.ok(widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
+ assert.ok(widgets.some(w=>w.props.text==='Gent'));
+ assert.ok(widgets.some(w=>w.props.text==='REGEN OVER 20 MIN'));
+ assert.ok(widgets.some(w=>w.props.text==='0,2 mm · 2 uur'));
+ assert.ok(widgets.some(w=>w.props.text==='12°'));
+ assert.ok(widgets.some(w=>w.props.text==='NW 11 km/u'));
+ assert.ok(widgets.filter(w=>w.type===3&&w.props.w===10).length===24);
+ const button=widgets.find(w=>w.type===2);button.props.click_func();
+ assert.equal(routes[0].url,'page/index');
 });
-test('An expired forecast is not shown as current in the left-swipe widget',()=>{
- const result=launch({location:'Gent',summary120:{state:'dry',headline:'HET BLIJFT DROOG',totalMm:0}},Date.now()-60*60*1000);
- assert.ok(result.widgets.some(x=>x.props.text==='GEEN RECENTE DATA'));
- assert.ok(!result.widgets.some(x=>x.props.text==='DROOG'));
+test('After stale forecasts widget retains a radar preview and does not lie about rain',()=>{
+ const {widgets}=launch(example,Date.now()-30*60*1000);
+ assert.ok(widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
+ assert.ok(widgets.some(w=>w.props.text==='OPEN VOOR ACTUELE REGEN'));
+ assert.ok(!widgets.some(w=>w.props.text==='REGEN OVER 20 MIN'));
 });
-test('No data tells user to open app rather than fabricating rain forecast',()=>{
- const result=launch(null);
- assert.ok(result.widgets.some(x=>x.props.text==='GEEN RECENTE DATA'));
- assert.ok(result.widgets.some(x=>x.props.text==='Open de app om te vernieuwen'));
+test('Cold startup always shows the radar, never a blank stale-data wall',()=>{
+ const {widgets}=launch(null);
+ assert.ok(widgets.some(w=>w.type===4));
+ assert.ok(widgets.some(w=>w.props.text==='Tik voor de nieuwste voorspelling'));
 });
