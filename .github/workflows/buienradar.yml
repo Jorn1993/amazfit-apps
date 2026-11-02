@@ -1,0 +1,124 @@
+name: Buienradar — test, package and QR
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/buienradar/**'
+      - '.github/workflows/buienradar.yml'
+      - '!apps/buienradar/public/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: buienradar-package
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Zepp toolchain and QR generator
+        run: |
+          python -m pip install "qrcode[pil]"
+          npm install --prefix zeus-cli @zeppos/zeus-cli@1.9.3
+          ln -s @zeppos/zeus-cli/private-modules/zeppos-app-utils zeus-cli/node_modules/zeppos-app-utils
+          npm install --prefix apps/buienradar
+      - name: Check source and tests
+        run: |
+          node --check apps/buienradar/page/index.js
+          node --check apps/buienradar/app-side/index.js
+          node --check apps/buienradar/app-side/rain.js
+          node --check apps/buienradar/setting/index.js
+          node --test apps/buienradar/tests/*.test.mjs
+      - name: Build Zepp mini program
+        run: |
+          node apps/buienradar/prepare-assets.mjs
+          (cd apps/buienradar && ../../zeus-cli/node_modules/.bin/zeus build)
+      - name: Package developer ZPK and QR
+        run: |
+          python - <<'PY'
+          import io,json,zipfile,qrcode
+          from pathlib import Path
+          root=Path('apps/buienradar')
+          builds=sorted((root/'dist').glob('*.zab'),key=lambda p:p.stat().st_mtime)
+          if not builds: raise RuntimeError('Zepp did not produce a ZAB')
+          with zipfile.ZipFile(builds[-1]) as z:
+              packages=[n for n in z.namelist() if n.endswith('.zpk')]
+              if not packages: raise RuntimeError('Missing ZPK inside ZAB')
+              payload=z.read(packages[0])
+          with zipfile.ZipFile(io.BytesIO(payload)) as z:
+              contents={name:z.read(name) for name in z.namelist()}
+          for component in ('device.zip','app-side.zip'):
+              if component not in contents: raise RuntimeError('Missing '+component)
+              with zipfile.ZipFile(io.BytesIO(contents[component])) as inner:
+                  files={name:inner.read(name) for name in inner.namelist()}
+              config=json.loads(files['app.json'])
+              if config['app']['appId']!=1936821: raise RuntimeError('Wrong app ID')
+              config.setdefault('packageInfo',{})['mode']='preview'
+              files['app.json']=json.dumps(config,separators=(',',':')).encode()
+              buf=io.BytesIO()
+              with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as out:
+                  for name,data in files.items():out.writestr(name,data)
+              contents[component]=buf.getvalue()
+              if component=='app-side.zip':
+                  if 'app-side.js' not in files or 'setting.js' not in files:
+                      raise RuntimeError('Missing phone-side code')
+          buf=io.BytesIO()
+          with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as out:
+              for name,data in contents.items():out.writestr(name,data)
+          output=root/'public'
+          output.mkdir(parents=True,exist_ok=True)
+          version=json.loads((root/'app.json').read_text())['app']['version']['name']
+          package=output/f'buienradar-v{version}.zpk'
+          package.write_bytes(buf.getvalue())
+          link=f'zpkd1://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/{package.name}'
+          (output/'install-url.txt').write_text(link+'\n')
+          qrcode.make(link).save(output/'install-qr.png')
+          qrcode.make(link).save(output/f'install-qr-v{version}.png')
+          (output/'latest.json').write_text(json.dumps({
+              'version':version,'appId':1936821,
+              'packageUrl':f'https://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/{package.name}',
+              'installQrUrl':'https://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/install-qr.png'
+          },separators=(',',':'))+'\n')
+          print('Developer app',version,len(buf.getvalue()),'bytes')
+          PY
+      - name: Publish preview package and QR
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp -a apps/buienradar/public /tmp/buienradar-package
+          for attempt in 1 2 3; do
+            git fetch origin main
+            stale="$(git diff --name-only "$GITHUB_SHA" origin/main -- apps/buienradar/ ':!apps/buienradar/public/' .github/workflows/buienradar.yml)"
+            if [ -n "$stale" ]; then
+              echo "Source changed; skip obsolete build"
+              exit 0
+            fi
+            git reset --hard origin/main
+            mkdir -p apps/buienradar/public
+            cp -a /tmp/buienradar-package/. apps/buienradar/public/
+            git add apps/buienradar/public
+            if git diff --cached --quiet; then
+              echo "Current build already published"
+              exit 0
+            fi
+            git commit -m "build(buienradar): publish Zepp preview and QR [skip ci]"
+            if git push origin HEAD:main; then
+              echo "Developer package published"
+              exit 0
+            fi
+          done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buienradar-zepp-developer
+          path: apps/buienradar/public/
+          if-no-files-found: warn
