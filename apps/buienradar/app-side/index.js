@@ -1,6 +1,7 @@
 import {BaseSideService} from '@zeppos/zml/base-side';
 import {parseRaintext,describe,normalLocation,REFRESH_MS} from './rain.js';
-import {nearestStation,nextHourRain,RADAR_BE} from './weather.js';
+import {nearestStation,nextHourRain} from './weather.js';
+import {RADAR_CACHE_BASE,parseFrameManifest,frameUrl} from './radar-feed.js';
 
 const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
@@ -56,139 +57,126 @@ async function forecast(location){
  rainCache={key,at:now,payload};
  return {...payload,cached:false};
 }
-// Asynchronous, observable radar pipeline. onRequest never waits for file transfer.
-// Buienradar officially uses RadarMapRainBE for the Belgian radar map.
-const RADAR_MAX_MS=75000;
-let radarState={stage:'idle',error:null,updatedAt:0,requestId:0};
-let radarTask=null,radarBusy=false,radarGeneration=0;
-function stage(name,error=null,requestId=radarGeneration){
- if(requestId!==radarGeneration)return;
- radarState={stage:name,error,updatedAt:Date.now(),requestId};
- try{console.log('[Buienradar radar]',name,error||'');}catch(_){}
+// Actual Buienradar animated GIF is decoded by GitHub Actions into PNG frames.
+// Side Service can ONLY convert PNG, not GIF (Zepp OS limitation).
+let radarBusy=false,radarGeneration=0,radarTask=null,radarManifest=null;
+let radarState={stage:'idle',error:null,requestId:0,frameIndex:-1,updatedAt:0};
+function updateRadar(stage,error=null,id=radarGeneration,index=radarState.frameIndex){
+ if(id!==radarGeneration)return;
+ radarState={stage,error,requestId:id,frameIndex:index,updatedAt:Date.now()};
+ try{console.log('[Radar frames]',stage,'frame',index,error||'');}catch(_){}
 }
-function failAt(label,reason){
- const text=String(reason&&reason.message||reason||'unknown');
- throw Error(label+': '+text.slice(0,68));
-}
-function delayFail(promise,ms,label,onTimeout){
+function bounded(promise,ms,step,cancel){
  return new Promise((resolve,reject)=>{
-  let settled=false;
+  let done=false;
   const timer=setTimeout(()=>{
-   if(settled)return;
-   settled=true;
-   try{if(typeof onTimeout==='function')onTimeout();}catch(_){}
-   reject(Error(label+': timeout'));
+   if(done)return;done=true;
+   try{if(cancel)cancel();}catch(_){}
+   reject(Error(step+': timeout'));
   },ms);
-  Promise.resolve(promise).then(result=>{
-   if(settled)return;
-   settled=true;clearTimeout(timer);resolve(result);
-  },error=>{
-   if(settled)return;
-   settled=true;clearTimeout(timer);reject(error);
+  Promise.resolve(promise).then(data=>{
+   if(done)return;done=true;clearTimeout(timer);resolve(data);
+  },err=>{
+   if(done)return;done=true;clearTimeout(timer);reject(err);
   });
  });
 }
-function downloadRadar(id){
- return delayFail(new Promise((resolve,reject)=>{
-  if(typeof network==='undefined'||!network.downloader){
-   reject(Error('DOWNLOAD: Zepp downloader ontbreekt'));return;
-  }
+async function latestRadarManifest(){
+ const response=await fetch({url:RADAR_CACHE_BASE+'/manifest.json',method:'GET'});
+ if(resultStatus(response)!==200)throw Error('CACHE: HTTP '+resultStatus(response));
+ return parseFrameManifest(response.body);
+}
+function downloadFrame(url,index,id){
+ return bounded(new Promise((resolve,reject)=>{
+  if(typeof network==='undefined'||!network.downloader)
+   return reject(Error('DOWNLOAD: Zepp downloader ontbreekt'));
   try{
-   // Avoid introducing undocumented query parameters to Buienradar's image API.
    const task=network.downloader.downloadFile({
-    url:RADAR_BE,
-    timeout:22000,
-    filePath:'data://download/buienradar-be-'+id+'.png'
+    url,timeout:20000,
+    filePath:'data://download/br-frame-'+id+'-'+index+'.png'
    });
    radarTask=task;
    task.onSuccess=event=>{
-    const status=Number(event&&event.statusCode);
-    if(status!==200){
-     reject(Error('DOWNLOAD: HTTP '+String(status||'?')));return;
-    }
-    const file=event.filePath||event.tempFilePath;
-    if(!file){reject(Error('DOWNLOAD: leeg bestandspad'));return;}
-    resolve(file);
+    if(Number(event&&event.statusCode)!==200)
+     reject(Error('DOWNLOAD: HTTP '+String(event&&event.statusCode||'?')));
+    else if(!(event.filePath||event.tempFilePath))
+     reject(Error('DOWNLOAD: geen bestand'));
+    else resolve(event.filePath||event.tempFilePath);
    };
-   task.onFail=ev=>{
-    reject(Error('DOWNLOAD: '+String(ev&&ev.message||ev&&ev.code||'netwerkfout')));
-   };
-  }catch(e){reject(Error('DOWNLOAD: '+String(e&&e.message||e).slice(0,50)));}
- }),28000,'DOWNLOAD',()=>{if(radarTask&&radarTask.cancel)radarTask.cancel();});
+   task.onFail=event=>reject(Error('DOWNLOAD: '+String(event&&event.message||'netwerkfout')));
+  }catch(err){reject(Error('DOWNLOAD: '+String(err&&err.message||err)));}
+ }),25000,'DOWNLOAD',()=>{try{radarTask?.cancel?.();}catch(_){}});
 }
-function waitTransfer(file){
- return delayFail(new Promise((resolve,reject)=>{
-  if(!file||typeof file.on!=='function'){
-   reject(Error('TRANSFER: geen Zepp FileObject'));return;
-  }
-  const check=s=>{
-   if(s==='transferred')resolve();
-   else if(s==='error'||s==='canceled')reject(Error('TRANSFER: '+s));
+function waitForTransfer(file){
+ return bounded(new Promise((resolve,reject)=>{
+  if(!file||typeof file.on!=='function')
+   return reject(Error('TRANSFER: file object ontbreekt'));
+  const check=state=>{
+   if(state==='transferred')resolve();
+   if(state==='error'||state==='canceled')reject(Error('TRANSFER: '+state));
   };
-  file.on('change',ev=>check(ev&&ev.data&&ev.data.readyState||file.readyState));
+  file.on('change',event=>check(event&&event.data&&event.data.readyState||file.readyState));
   check(file.readyState);
- }),35000,'TRANSFER',()=>{try{if(file&&file.cancel)file.cancel();}catch(_){}});
+ }),37000,'TRANSFER',()=>{try{file?.cancel?.();}catch(_){}});
 }
-async function runRadar(id){
+async function sendFrame(index,id){
  try{
-  stage('download',null,id);
-  const path=await downloadRadar(id);
-  if(id!==radarGeneration)return;
-  stage('convert',null,id);
+  const file=radarManifest.frames[index];
+  updateRadar('download',null,id,index);
+  const raw=await downloadFrame(frameUrl(file),index,id);
+  updateRadar('convert',null,id,index);
   if(typeof image==='undefined'||typeof image.convert!=='function')
-   throw Error('CONVERT: image.convert ontbreekt in Zepp');
+   throw Error('CONVERT: Zepp image converter ontbreekt');
   let converted;
   try{
-   converted=await delayFail(
-    image.convert({filePath:path,targetFilePath:'data://download/buienradar-be-'+id+'.img'}),
-    12000,'CONVERT');
-  }catch(e){throw Error('CONVERT: '+String(e&&e.message||e).slice(0,62));}
-  if(!converted||!converted.targetFilePath)
-   throw Error('CONVERT: geen uitvoerbestand');
-  stage('transfer',null,id);
+   converted=await bounded(image.convert({filePath:raw}),15000,'CONVERT');
+  }catch(e){throw Error('CONVERT: '+String(e&&e.message||e).slice(0,70));}
+  if(!converted?.targetFilePath)throw Error('CONVERT: geen uitvoer');
+  updateRadar('transfer',null,id,index);
   if(typeof transferFile==='undefined'||typeof transferFile.getOutbox!=='function')
-   throw Error('TRANSFER: Side Service transferFile ontbreekt');
+   throw Error('TRANSFER: Zepp Side Service ontbreekt');
   const outbox=transferFile.getOutbox();
-  if(!outbox||typeof outbox.enqueueFile!=='function')
-   throw Error('TRANSFER: outbox ontbreekt');
-  const file=outbox.enqueueFile(converted.targetFilePath,{
-   kind:'buienradar-radar',requestId:id
+  if(!outbox?.enqueueFile)throw Error('TRANSFER: ontbrekende outbox');
+  const task=outbox.enqueueFile(converted.targetFilePath,{
+   kind:'buienradar-frame',frameIndex:index,requestId:id,
+   generatedAt:radarManifest.generatedAt
   });
-  await waitTransfer(file);
-  if(id===radarGeneration)stage('transferred',null,id);
+  await waitForTransfer(task);
+  updateRadar('transferred',null,id,index);
  }catch(e){
-  stage('failed',String(e&&e.message||e).slice(0,100),id);
- }finally{
-  radarTask=null;radarBusy=false;
- }
+  updateRadar('failed',String(e&&e.message||e).slice(0,100),id,index);
+ }finally{radarBusy=false;radarTask=null;}
 }
-function startRadar(){
- if(radarBusy)return {...radarState,ok:true};
- radarGeneration++;
- radarBusy=true;
- const id=radarGeneration;
- stage('starting',null,id);
- void runRadar(id);
+function beginFrame(index){
+ if(radarBusy)return {...radarState,ok:false,error:'FRAME: overdracht bezig'};
+ if(!radarManifest||index<0||index>=radarManifest.frameCount)
+  return {ok:false,error:'FRAME: ongeldige reeks'};
+ radarBusy=true;const id=++radarGeneration;
+ updateRadar('starting',null,id,index);
+ void sendFrame(index,id);
  return {...radarState,ok:true};
 }
-function radarStatus(){
- const state={...radarState,ok:true};
- if(radarBusy&&Date.now()-state.updatedAt>RADAR_MAX_MS){
-  stage('failed','RADAR: geen reactie na 75 seconden');
+function currentRadarState(){
+ if(radarBusy&&Date.now()-radarState.updatedAt>75000){
+  updateRadar('failed','FRAME: time-out');
   radarBusy=false;
-  return {...radarState,ok:true};
  }
- return state;
+ return {...radarState,ok:true};
 }
 AppSideService(BaseSideService({
  async onRequest(req,res){
   try{
    if(!req)throw Error('Missing request');
-   if(req.method==='radar.refresh'){
-    res(null,startRadar());return;
+   if(req.method==='radar.manifest'){
+    try{radarManifest=await latestRadarManifest();res(null,radarManifest);}
+    catch(e){res(null,{ok:false,error:'CACHE: '+String(e&&e.message||e).slice(0,70)});}
+    return;
+   }
+   if(req.method==='radar.frame'){
+    res(null,beginFrame(Number(req.params&&req.params.index)));return;
    }
    if(req.method==='radar.status'){
-    res(null,radarStatus());return;
+    res(null,currentRadarState());return;
    }
    if(req.method!=='rain.forecast')
     throw Error('Unsupported request');
