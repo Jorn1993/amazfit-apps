@@ -48,14 +48,15 @@ Page(BasePage({
   let alert={enabled:false,lead:15};
   try{alert={...alert,...JSON.parse(storage.getItem('buienradar.alert')||'{}')};}catch(_){}
   this.alert=alert;
-  this.alertButton=button(135,272,210,51,alert.enabled?'AAN':'UIT',
+  this.alertButton=button(135,267,210,50,alert.enabled?'AAN':'UIT',
    ()=>this.toggleAlert(),alert.enabled);
-  this.leadText=label(124,337,232,40,alert.lead+' MIN VOORAF',23,white);
-  button(70,332,53,53,'−',()=>this.changeLead(-1));
-  button(357,332,53,53,'+',()=>this.changeLead(1));
-  this.status=label(72,384,336,28,'',17,muted);
-  button(88,415,142,48,'TEST',()=>this.testNotification());
-  button(248,415,145,48,'OPSLAAN',()=>void this.save(),true);
+  this.leadText=label(133,331,214,37,alert.lead+' MIN VOORAF',22,white);
+  button(87,328,47,47,'−',()=>this.changeLead(-1));
+  button(346,328,47,47,'+',()=>this.changeLead(1));
+  // Bottom controls are inside the 480px round display (no clipped buttons).
+  button(105,373,124,44,'TEST',()=>this.testNotification());
+  button(251,373,124,44,'OPSLAAN',()=>void this.save(),true);
+  this.status=label(137,421,206,24,'',16,muted);
  },
  pick(delta){
   this.selected=(this.selected+delta+cities.length)%cities.length;
@@ -64,7 +65,7 @@ Page(BasePage({
  toggleAlert(){
   this.alert.enabled=!this.alert.enabled;
   this.alertButton.setProperty(ui.prop.MORE,{
-   x:135,y:272,w:210,h:51,text:this.alert.enabled?'AAN':'UIT',
+   x:135,y:267,w:210,h:50,text:this.alert.enabled?'AAN':'UIT',
    normal_color:this.alert.enabled?0x176b99:0x182f3e
   });
  },
