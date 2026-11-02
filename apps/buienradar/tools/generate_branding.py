@@ -6,7 +6,7 @@ through its Wikimedia Commons public-domain-textlogo mirror. No imitation.
 """
 from io import BytesIO
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageChops
 import requests
 
 ROOT = Path("apps/buienradar")
@@ -55,6 +55,17 @@ def official_logo():
     if logo is None:
         logo=fallback_wordmark()
         source="local Buienradar-style fallback (not authentic source)"
+    # Logo mirrors sometimes include large white margins around the actual wordmark.
+    # Remove those margins BEFORE scaling, otherwise the logo appears microscopic.
+    white=Image.new("RGBA",logo.size,(255,255,255,255))
+    white.alpha_composite(logo)
+    diff=ImageChops.difference(white.convert("RGB"),
+                               Image.new("RGB",logo.size,(255,255,255))).convert("L")
+    bounds=diff.point(lambda p: 255 if p>30 else 0).getbbox()
+    if bounds:
+        x0,y0,x1,y1=bounds
+        logo=logo.crop((max(0,x0-5),max(0,y0-4),
+                        min(logo.width,x1+5),min(logo.height,y1+4)))
     wordmark=Image.new("RGBA",(240,51),(0,0,0,0))
     small=logo.copy()
     small.thumbnail((232,45),Image.Resampling.LANCZOS)
