@@ -74,8 +74,14 @@ def official_logo():
     # The matching logo app icon contains the symbol only.
     symbol=logo.crop((0,0,min(logo.height,logo.width),logo.height))
     symbol.thumbnail((161,161),Image.Resampling.LANCZOS)
-    icon=Image.new("RGBA",(256,256),(255,255,255,255))
-    icon.alpha_composite(symbol,((256-symbol.width)//2,(256-symbol.height)//2))
+    icon=Image.new("RGBA",(256,256),(0,0,0,0))
+    mask=Image.new("L",(256,256),0)
+    ImageDraw.Draw(mask).ellipse((14,14,242,242),fill=255)
+    blue=Image.new("RGBA",(256,256),(20,61,149,255))
+    icon.paste(blue,(0,0),mask)
+    badge=symbol.copy()
+    badge.thumbnail((174,174),Image.Resampling.LANCZOS)
+    icon.alpha_composite(badge,((256-badge.width)//2,(256-badge.height)//2))
     save("icon.png",icon)
     print("Buienradar branding source:",source)
 

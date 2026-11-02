@@ -5,15 +5,17 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.4.0",
-      "code": 6
+      "name": "0.5.0",
+      "code": 7
     },
     "vender": "Personal prototype",
-    "description": "Volledig scherm radaranimatie, vloeiende swipepagina's en grote weericonen",
+    "description": "Refined radar zoom, local on-watch settings and opt-in rain alerts",
     "icon": "icon.png"
   },
   "permissions": [
-    "device:os.local_storage"
+    "device:os.local_storage",
+    "device:os.alarm",
+    "device:os.notification"
   ],
   "runtime": {
     "apiVersion": {
@@ -27,14 +29,12 @@
       "module": {
         "page": {
           "pages": [
-            "page/index"
+            "page/index",
+            "page/settings"
           ]
         },
         "app-side": {
           "path": "app-side/index"
-        },
-        "setting": {
-          "path": "setting/index"
         },
         "secondary-widget": {
           "widgets": [
@@ -47,6 +47,11 @@
                 "type": "js"
               }
             }
+          ]
+        },
+        "app-service": {
+          "services": [
+            "app-service/rain-alert"
           ]
         }
       },

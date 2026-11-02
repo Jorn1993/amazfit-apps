@@ -167,6 +167,15 @@ AppSideService(BaseSideService({
  async onRequest(req,res){
   try{
    if(!req)throw Error('Missing request');
+   if(req.method==='config.get'){
+    res(null,{ok:true,location:selectedLocation()});return;
+   }
+   if(req.method==='config.set'){
+    const loc=normalLocation(req.params&&req.params.location);
+    settings.settingsStorage.setItem('buienradar.location',JSON.stringify(loc));
+    rainCache=null;
+    res(null,{ok:true,location:loc});return;
+   }
    if(req.method==='radar.manifest'){
     try{radarManifest=await latestRadarManifest();res(null,radarManifest);}
     catch(e){res(null,{ok:false,error:'CACHE: '+String(e&&e.message||e).slice(0,70)});}
