@@ -99,7 +99,6 @@ Page(BasePage({
     const params=file.params,index=Number(params.frameIndex);
     const session=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
     if(handled[session])return;
-    handled[session]=true;
     if(!Number.isInteger(index)||index<0||index>=12)return;
     const load=()=>{
      if(this.disposed||!file.filePath)return;
@@ -122,10 +121,11 @@ Page(BasePage({
       this.pendingFrame.resolve();this.pendingFrame=null;
      }
     };
-    if(file.readyState==='transferred'){load();return;}
+    handled[session]={file,load,done:false};
+    if(file.readyState==='transferred'){load();handled[session].done=true;return;}
     if(typeof file.on==='function')file.on('change',ev=>{
      const state=ev&&ev.data&&ev.data.readyState||file.readyState;
-     if(state==='transferred')load();
+     if(state==='transferred'){load();handled[session].done=true;}
      else if(state==='error'||state==='canceled'){
       if(this.pendingFrame&&this.pendingFrame.index===index){
        this.pendingFrame.reject(Error('BLE ontvangst '+state));this.pendingFrame=null;
@@ -133,8 +133,16 @@ Page(BasePage({
      }
     });
    };
-   inbox.on('NEWFILE',handle);
-   inbox.on('FILE',handle);
+   const sweep=()=>{
+    for(const entry of Object.values(handled)){
+     if(!entry.done&&entry.file.readyState==='transferred'){
+      entry.load();entry.done=true;
+     }
+    }
+   };
+   inbox.on('NEWFILE',()=>{handle();sweep();});
+   // FILE means completion even on devices that omit the per-file callback.
+   inbox.on('FILE',()=>{sweep();handle();sweep();});
   }catch(_){this.radarSource.setProperty(ui.prop.TEXT,'Zepp-overdracht niet beschikbaar');}
  },
  nextRadarFrame(){
