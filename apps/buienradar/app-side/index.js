@@ -106,8 +106,7 @@ function waitForTransfer(file){
 }
 async function sendRadar(){
  if(radarBusy)throw Error('Radaroverdracht is al bezig');
- if(radarLastDelivered&&Date.now()-radarLastDelivered<REFRESH_MS)
-  return {ok:true,alreadyDelivered:true};
+ // Always transfer to the CURRENT watch app session; a previous transfer is not a cache hit.
  radarBusy=true;
  try{
   const path=await downloadRadar();

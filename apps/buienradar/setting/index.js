@@ -6,7 +6,7 @@ const CITIES=[
  ['Luik',50.6326,5.5797],['Amsterdam',52.3676,4.9041],
  ['Rotterdam',51.9244,4.4777],['Maastricht',50.8514,5.691]
 ];
-const VERSION='0.2.0';
+const VERSION='0.2.1';
 let name='',lat='',lon='';
 AppSettingsPage({
  build(props){
@@ -58,7 +58,7 @@ AppSettingsPage({
   add(Text({paragraph:true,style:{color:muted,fontSize:'13px'}},
    'Buienradar voor Balance 2 · v'+VERSION+' · Onafhankelijke testapp'));
   add(Text({paragraph:true,style:{color:muted,fontSize:'13px'}},
-   'Nieuwe versies krijgen automatisch een installatie-QR, maar niet automatisch een stille installatie. Swipe rechts vanaf de wijzerplaat en voeg Buienradar toe aan je snelkoppelingskaarten.'));
+   'Nieuwe versies krijgen automatisch een installatie-QR, maar niet automatisch een stille installatie. Swipe LINKS vanaf de wijzerplaat. Voeg Buienradar toe via Instellingen - Voorkeuren - Widgets.'));
   add(Link({source:'https://github.com/Jorn1993/amazfit-apps/tree/main/apps/buienradar/public/'},
    [Text({},'Update en installatie-QR')]));
   add(Text({paragraph:true,style:{color:muted,fontSize:'12px'}},

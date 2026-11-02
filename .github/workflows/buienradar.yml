@@ -36,7 +36,7 @@ jobs:
           node --check apps/buienradar/app-side/index.js
           node --check apps/buienradar/app-side/rain.js
           node --check apps/buienradar/app-side/weather.js
-          node --check apps/buienradar/app-widget/index.js
+          node --check apps/buienradar/secondary-widget/index.js
           node --check apps/buienradar/setting/index.js
           node --test apps/buienradar/tests/*.test.mjs
       - name: Build Zepp mini program
@@ -57,6 +57,11 @@ jobs:
               payload=z.read(packages[0])
           with zipfile.ZipFile(io.BytesIO(payload)) as z:
               contents={name:z.read(name) for name in z.namelist()}
+          # Require native full-screen widget (not an AppWidget shortcut).
+          with zipfile.ZipFile(io.BytesIO(contents['device.zip'])) as device:
+              files=device.namelist()
+              if not any('secondary-widget' in name for name in files):
+                  raise RuntimeError('Missing swipe-left SecondaryWidget')
           for component in ('device.zip','app-side.zip'):
               if component not in contents: raise RuntimeError('Missing '+component)
               with zipfile.ZipFile(io.BytesIO(contents[component])) as inner:
