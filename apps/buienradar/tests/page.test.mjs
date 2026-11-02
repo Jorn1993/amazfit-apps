@@ -103,8 +103,8 @@ test('Actual BLE frames replace bundled animation only after 2 received',async()
 test('Useful third page: large temperature, precipitation and wind with genuine pictograms',async()=>{
  const t=launch();t.page.build();await flush();
  assert.equal(t.page.temp.values.text,'12°');
- assert.equal(t.page.temp.values.text_size,68);
- assert.equal(t.page.amount.values.text,'0.2 mm');
+ assert.equal(t.page.temp.values.text_size,72);
+ assert.equal(t.page.amount.values.text,'0,2 mm');
  assert.match(t.page.wind.values.text,/NW/);
  assert.equal(t.page.station.values.text,'');
  assert.equal(t.page.weatherIcon.values.more.src,'weather-cloud.png');
@@ -134,7 +134,7 @@ test('Horizon selector uses same actual data but produces different status label
 
 test('Weather screen card corners and essential text fit the circular cutout',async()=>{
  const t=launch();t.page.build();await flush();
- const surfaces=t.page.parts[2].filter(w=>w.type===3&&w.values.color===0x0e2332);
+ const surfaces=t.page.parts[2].filter(w=>w.type===3&&w.values.color===0x102838);
  assert.equal(surfaces.length,3);
  for(const {values:r} of [...surfaces,t.page.temp,t.page.amount,t.page.wind,t.page.gusts]){
   for(const [x,y] of [[r.x,r.y],[r.x+r.w,r.y],[r.x,r.y+r.h],[r.x+r.w,r.y+r.h]]){

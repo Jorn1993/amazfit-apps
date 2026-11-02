@@ -32,25 +32,25 @@ test('SecondaryWidget combines radar, upcoming rain, graph and current station m
  assert.ok(widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
  assert.ok(widgets.some(w=>w.props.text==='Gent'));
  assert.ok(widgets.some(w=>w.props.text==='REGEN OVER 20 MIN'));
- assert.ok(widgets.some(w=>w.props.text==='0,2 mm · 2 uur'));
+ assert.ok(widgets.some(w=>w.props.text==='0,2 mm  /  2 uur'));
  assert.ok(widgets.some(w=>w.props.text==='12°'));
  assert.ok(widgets.some(w=>w.props.text==='NW 11 km/u'));
- assert.equal(widgets.filter(w=>w.type===3&&w.props.w===9).length,24);
+ assert.equal(widgets.filter(w=>w.type===3&&w.props.w===8).length,24);
  const button=widgets.find(w=>w.type===2);button.props.click_func();
  assert.equal(routes[0].url,'page/index');
 });
 test('After stale forecasts widget retains a radar preview and does not lie about rain',()=>{
  const {widgets}=launch(example,Date.now()-30*60*1000);
  assert.ok(widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
- assert.ok(widgets.some(w=>w.props.text==='OPEN VOOR REGEN'));
- assert.ok(widgets.some(w=>w.props.text==='VOORSPELLING VERLOPEN'));
- assert.ok(widgets.some(w=>w.props.text==='LAATST BEKEND'));
+ assert.ok(widgets.some(w=>w.props.text==='OPEN BUIENRADAR'));
+ assert.ok(widgets.some(w=>w.props.text==='LAATSTE VERWACHTING'));
+ assert.ok(widgets.some(w=>w.props.text==='LAATSTE VERWACHTING'));
  assert.ok(!widgets.some(w=>w.props.text==='REGEN OVER 20 MIN'));
 });
 test('Cold startup always shows the radar, never a blank stale-data wall',()=>{
  const {widgets}=launch(null);
  assert.ok(widgets.some(w=>w.type===4));
- assert.ok(widgets.some(w=>w.props.text==='GEEN VOORSPELLING'));
+ assert.ok(widgets.some(w=>w.props.text==='OPEN VOOR NIEUWE DATA'));
  assert.ok(widgets.some(w=>w.props.text==='--°'));
 });
 
