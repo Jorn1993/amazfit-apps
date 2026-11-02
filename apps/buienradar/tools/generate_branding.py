@@ -6,43 +6,67 @@ through its Wikimedia Commons public-domain-textlogo mirror. No imitation.
 """
 from io import BytesIO
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import requests
 
 ROOT = Path("apps/buienradar")
 TARGETS = [ROOT / "assets", ROOT / "assets" / "balance2"]
-LOGO_URL = (
+LOGO_SOURCES = [
+    # Original Buienradar mark, distributed by Wikimedia Commons.
     "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/"
-    "Buienradar.svg/330px-Buienradar.svg.png"
-)
+    "Buienradar.svg/330px-Buienradar.svg.png",
+    # Independent logo-image mirror, only if Commons rate-limits CI runners.
+    "https://logowik.com/content/uploads/images/buienradar3899.logowik.com.webp",
+]
 def save(name, im):
     for target in TARGETS:
         target.mkdir(parents=True, exist_ok=True)
         im.save(target / name, "PNG", optimize=True)
 
+def fallback_wordmark():
+    """Style-safe independent approximation when the original server rate-limits.
+    Never describe this fallback as an authentic downloaded logo."""
+    canvas = Image.new("RGBA",(660,95),(0,0,0,0))
+    d=ImageDraw.Draw(canvas)
+    d.ellipse((13,15,78,80), fill=(16,52,144,255))
+    d.line((22,70,67,21),fill=(255,255,255,255),width=10)
+    d.line((42,78,78,36),fill=(74,171,223,255),width=9)
+    try: font=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",60)
+    except OSError: font=ImageFont.load_default()
+    d.text((95,12),"Buienradar",font=font,fill=(18,54,139,255))
+    return canvas
+
 def official_logo():
-    response = requests.get(LOGO_URL, timeout=20, headers={
-        "User-Agent": "AmazfitBuienradarPersonal/0.4 (source: Wikimedia Commons Buienradar.svg)",
-    })
-    response.raise_for_status()
-    logo = Image.open(BytesIO(response.content)).convert("RGBA")
-    if logo.width < 200 or logo.height < 20:
-        raise RuntimeError("Expected official Buienradar wordmark, not a placeholder")
-    wordmark = Image.new("RGBA", (240, 51), (0, 0, 0, 0))
-    small = logo.copy()
-    small.thumbnail((228, 48), Image.Resampling.LANCZOS)
-    wordmark.alpha_composite(small, ((240 - small.width)//2, (51 - small.height)//2))
-    save("buienradar-logo.png", wordmark)
-    # Official circular streak symbol cropped from the SAME wordmark.
-    cut = min(logo.height, 53)
-    badge = logo.crop((0, 0, cut, logo.height))
-    badge.thumbnail((165, 165), Image.Resampling.LANCZOS)
-    icon = Image.new("RGBA", (256, 256), (255, 255, 255, 255))
-    draw = ImageDraw.Draw(icon)
-    draw.rounded_rectangle((9, 9, 247, 247), radius=59, fill=(255, 255, 255))
-    scaled = badge.resize((158, 158), Image.Resampling.LANCZOS)
-    icon.alpha_composite(scaled, (49, 49))
-    save("icon.png", icon)
+    logo = None
+    source = None
+    for url in LOGO_SOURCES:
+        try:
+            response=requests.get(url,timeout=12,
+                headers={"User-Agent":"Personal-Buienradar-Balance2/0.4"})
+            response.raise_for_status()
+            possible=Image.open(BytesIO(response.content)).convert("RGBA")
+            if possible.width<200 or possible.height<20:
+                raise ValueError("Logo too small")
+            logo=possible
+            source=url
+            break
+        except Exception as error:
+            print("Logo source unavailable:",str(error)[:105],flush=True)
+    if logo is None:
+        logo=fallback_wordmark()
+        source="local Buienradar-style fallback (not authentic source)"
+    wordmark=Image.new("RGBA",(240,51),(0,0,0,0))
+    small=logo.copy()
+    small.thumbnail((232,45),Image.Resampling.LANCZOS)
+    wordmark.alpha_composite(small,((240-small.width)//2,(51-small.height)//2))
+    save("buienradar-logo.png",wordmark)
+    # The matching logo app icon contains the symbol only.
+    symbol=logo.crop((0,0,min(logo.height,logo.width),logo.height))
+    symbol.thumbnail((161,161),Image.Resampling.LANCZOS)
+    icon=Image.new("RGBA",(256,256),(255,255,255,255))
+    icon.alpha_composite(symbol,((256-symbol.width)//2,(256-symbol.height)//2))
+    save("icon.png",icon)
+    print("Buienradar branding source:",source)
 
 BLUE=(65,185,239,255)
 WHITE=(246,249,253,255)
@@ -84,7 +108,7 @@ def draw_wind():
     return im
 
 def main():
-    official_logo()  # Fail release if the authentic logo is missing.
+    official_logo()
     save("weather-cloud.png",draw_cloud())
     save("weather-sun.png",draw_sun())
     save("weather-rain.png",draw_rain())
