@@ -1,6 +1,6 @@
 # Buienradar — Amazfit Balance 2
 
-**v0.6.0 | Zepp OS 3 | Personal prototype**
+**v0.7.0 | Zepp OS 3 | Personal prototype**
 
 ## One forecast, consistent across all screens
 
@@ -10,17 +10,17 @@ The watch only accepts responses carrying a valid timestamp, 24 data buckets and
 
 ## Screens
 
-- **Radar**: full-screen six-frame official Belgium animation, chosen place badge, approximate yellow location marker, zoom, plus the **current watch clock at upper left**. The clock is *device time*, **not** the original timestamp of each radar animation frame, which is not exposed as structured metadata by this API. The source animation updates independently via the scheduled GitHub workflow; bundled frames may be older than now.
+- **Radar**: animated Belgian radar on the full display, zoom, and an indicative yellow location square. The authentic **time rendered into each official animation frame** is moved within the round watch's safe area while extracting frames. This is *radar frame time*, not device clock time. Radar animations can be delayed or older than the present time.
 - **Rain**: one large state, a true 1-hour/2-hour switch, matching graph labels and amounts, no redundant headline/subtitle.
 - **Weather**: large current temperature, **next-hour** precipitation, wind and gusts. Temperature/wind are latest readings from a station and are not weather forecasts. The station may be missing, in which case placeholders appear.
 - **Settings on watch**: select a Belgian/Dutch city and opt into a rain reminder with a 5/15/30-minute lead. No companion Zepp Settings UI.
-- **SecondaryWidget**: full-screen shortcut to open Buienradar, with the same fresh 2-hour summary as the main app. Stops displaying previous data after eight minutes.
+- **SecondaryWidget**: composite full-screen glance card with a radar image, the last fresh 2-hour summary, a 24-bar mini-rainfall chart, temperature and wind. An expired prediction is not presented as current; the last bundled radar remains visible. Tap the card to open the app.
 
 All pages are designed for the 480px round Balance 2 and use Zepp's native horizontal swipe.
 
 ## Background notification limitation
 
-An alarm can be scheduled from the latest two-hour forecast and may fire after closing the app. It **does not continuously check for changes** in the weather while the watch app is closed. Disable warnings from the watch settings; cancellation is applied when the full app next synchronizes. Notification delivery on physical hardware has not been verified.
+An alarm can be scheduled from the latest two-hour forecast and may fire after closing the app. It **does not continuously check for changes** in the weather while the watch app is closed. Disable warnings from the watch settings to cancel a pending alarm. The watch Settings screen includes a **TEST** button which explicitly sends a Zepp OS system notification and reports whether Zepp accepted the request. This is useful for live device testing; notification delivery is not proven by a successful CI build.
 
 ## Radar image source
 
