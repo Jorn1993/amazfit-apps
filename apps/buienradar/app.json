@@ -5,15 +5,14 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.3.0",
-      "code": 5
+      "name": "0.4.0",
+      "code": 6
     },
     "vender": "Personal prototype",
-    "description": "Drie schermen met Buienradar-animatie en linkse widget",
+    "description": "Volledig scherm radaranimatie, vloeiende swipepagina's en grote weericonen",
     "icon": "icon.png"
   },
   "permissions": [
-    "device:os.geolocation",
     "device:os.local_storage"
   ],
   "runtime": {

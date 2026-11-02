@@ -1,197 +1,198 @@
 import * as ui from '@zos/ui';
-import {onGesture,offGesture,GESTURE_LEFT,GESTURE_RIGHT} from '@zos/interaction';
+import {setScrollMode, SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
 import TransferFile from '@zos/ble/TransferFile';
 import {LocalStorage} from '@zos/storage';
 import {BasePage} from '@zeppos/zml/base-page';
 
-// Three full-size pages for 480px Balance 2, after user's original references.
-const C={bg:0x050505,white:0xffffff,muted:0xb4b4b4,dim:0x696969,
- blue:0x54b9ff,orange:0xff704d,empty:0x202020,grid:0x404040,
- rain:0x339de2,yellow:0xffc344};
-const ZERO={ok:false,points:[],summary:null};
-const cache=new LocalStorage();
+// Native horizontal swipe. Each screen is its own 480x480 VIEW_CONTAINER.
+// No gesture interception or abrupt visibility switching.
+const SIZE=480;
+const C={
+ bg:0x05090d,white:0xf7fafc,muted:0x9bb0bf,blue:0x56c7fc,
+ line:0x34434e,bar:0x2f9dd8,empty:0x244052,orange:0xff9267
+};
+const EMPTY={ok:false,points:[],summary:null};
+const storage=new LocalStorage();
+function valid(n){return typeof n==='number'&&Number.isFinite(n);}
+function shown(n,unit){return valid(n)?Math.round(n)+unit:'--'+unit;}
 Page(BasePage({
  build(){
-  this.disposed=false;this.loading=false;this.screen=0;this.rain=ZERO;
-  this.lastGps=null;this.radarSyncing=false;this.radarRequestId=null;
-  this.radarBatchStamp=null;this.liveFrames=[];
+  this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
+  this.liveFrames=[];this.radarStamp=null;this.radarSyncing=false;
   this.radarPaths=Array.from({length:6},(_,i)=>'radar-frame-'+i+'.png');
-  this.frameIndex=0;this.frameDelayMs=950;this.pendingFrame=null;
+  this.frameIndex=0;this.pendingFrame=null;this.pageViews=[];this.parts=[[],[],[]];
+  this.bars=[];this.indicators=[];
   try{
-   const saved=JSON.parse(cache.getItem('buienradar.radar-frames.v1')||'null');
-   const at=Date.parse(saved&&saved.generatedAt);
+   const saved=JSON.parse(storage.getItem('buienradar.radar-frames.v1')||'null');
+   const time=Date.parse(saved&&saved.generatedAt);
    if(saved&&Array.isArray(saved.frames)&&saved.frames.length>=3&&
-    at>0&&Date.now()-at<45*60000&&
+    time>0&&Date.now()-time<45*60000&&
     saved.frames.every(p=>typeof p==='string'&&p.startsWith('data://'))){
-    this.radarPaths=saved.frames;this.radarBatchStamp=saved.generatedAt;
+    this.radarPaths=saved.frames;
+    this.radarStamp=saved.generatedAt;
    }
-  }catch(_){};
-  this.radarWidget=null;this.radarAt=0;this.radarWatchdog=null;
-  this.radarPollTimer=null;this.radarRequestedAt=0;this.radarRequestId=null;
-  this.parts=[[],[],[]];this.bars=[];
-  const add=(page,type,opts)=>{
-   const w=ui.createWidget(type,opts);
-   if(page!==null)this.parts[page].push(w);
-   return w;
-  };
-  const text=(page,x,y,w,h,value,size=22,color=C.white)=>
-   add(page,ui.widget.TEXT,{x,y,w,h,text:value,text_size:size,color,
-    align_h:ui.align.CENTER_H,text_style:ui.text_style.WRAP});
-  const rect=(page,x,y,w,h,color,radius=0)=>
-   add(page,ui.widget.FILL_RECT,{x,y,w,h,color,radius});
-  const button=(page,x,y,w,h,label,fn)=>add(page,ui.widget.BUTTON,
-   {x,y,w,h,radius:15,normal_color:0x1b1b1b,press_color:0x333333,
-    text:label,text_size:16,color:C.white,click_func:fn});
-  rect(null,0,0,480,480,C.bg);
-  this.city=text(null,87,29,306,48,'Buienradar',32);
-  this.dots=[0,1,2].map((i)=>rect(null,211+i*27,461,10,10,C.dim,6));
-  // 1. Official live Belgian radar image; never use a static screenshot.
-  this.radarTime=text(0,95,83,290,25,'RADAR · ANIMATIE',17,C.muted);
-  this.radarWidget=add(0,ui.widget.IMG,{
-   x:58,y:109,w:364,h:282,src:this.radarPaths[0]
-  });
-  this.radarMessage=text(0,75,194,330,88,'',19,C.muted);
-  this.radarSource=text(0,84,397,312,30,'Buienradar.nl · voorbeeld',14,C.muted);
-  // 2. Large precipitation timeline. Each bar covers five minutes.
-  text(1,80,89,320,42,'NEERSLAG',28);
-  this.rainState=text(1,76,130,328,46,'Gegevens laden...',22,C.muted);
-  rect(1,65,355,348,2,C.grid);
-  for(let i=0;i<12;i++)rect(1,74+i*28,218,19,1,C.grid);
-  for(let i=0;i<12;i++)rect(1,74+i*28,285,19,1,C.grid);
-  for(let i=0;i<24;i++){
-   const bar=rect(1,82+i*14,350,9,3,C.empty,3);
-   this.bars.push(bar);
-  }
-  rect(1,77,181,3,176,C.orange);
-  text(1,59,361,78,24,'NU',16,C.white);
-  text(1,153,361,90,24,'30 min',16,C.muted);
-  text(1,263,361,90,24,'60 min',16,C.muted);
-  text(1,355,361,70,24,'2 uur',16,C.muted);
-  this.rainDetail=text(1,78,399,324,39,'Bron: Buienradar.nl',16,C.muted);
-  // 3. Large next-hour figures; current weather is explicitly labelled station.
-  text(2,78,97,324,39,'HET VOLGENDE UUR',26,C.muted);
-  this.temp=text(2,92,158,296,71,'-- °C',47);
-  text(2,115,220,250,26,'GEMETEN TEMPERATUUR',16,C.muted);
-  this.amount=text(2,78,251,324,52,'-- mm',35,C.blue);
-  text(2,120,303,240,23,'REGEN KOMEND UUR',16,C.muted);
-  this.wind=text(2,74,342,332,47,'--  /  --',27);
-  this.gusts=text(2,86,389,308,32,'Windstoten: --',19,C.muted);
-  this.station=text(2,76,428,328,29,'Weerstation: niet beschikbaar',13,C.muted);
-  this.initRadarInbox();
-  this.frameTimer=setInterval(()=>this.nextRadarFrame(),this.frameDelayMs);
-  onGesture({callback:(event)=>{
-   if(event===GESTURE_LEFT&&this.screen<2){this.setPage(this.screen+1);return true;}
-   if(event===GESTURE_RIGHT&&this.screen>0){this.setPage(this.screen-1);return true;}
-   return false;
+  }catch(_){}
+  setScrollMode({mode:SCROLL_MODE_SWIPER_HORIZONTAL,options:{
+   width:SIZE,count:3,modeParams:{on_page:(index)=>{
+    if(this.disposed)return;
+    this.screen=index;this.paintIndicators();
+    if(index===0)void this.requestRadar();
+   }}
   }});
-  this.setPage(0);
-  this.timer=setInterval(()=>{void this.refresh();},5*60*1000);
+  const create=(page,type,props)=>{
+   const w=this.pageViews[page].createWidget(type,props);
+   this.parts[page].push(w);return w;
+  };
+  const rect=(page,x,y,w,h,color,radius=0)=>
+   create(page,ui.widget.FILL_RECT,{x,y,w,h,color,radius});
+  const txt=(page,x,y,w,h,value,size=22,color=C.white)=>
+   create(page,ui.widget.TEXT,{x,y,w,h,text:value,text_size:size,color,
+    align_h:ui.align.CENTER_H,text_style:ui.text_style.WRAP});
+  for(let i=0;i<3;i++){
+   const view=ui.createWidget(ui.widget.VIEW_CONTAINER,{
+    x:0,y:0,w:SIZE,h:SIZE,page:i,scroll_enable:0
+   });
+   this.pageViews.push(view);
+   rect(i,0,0,SIZE,SIZE,C.bg);
+  }
+  // PAGE 1 — radar is genuinely full bleed, not inset in a square card.
+  this.radarWidget=create(0,ui.widget.IMG,{
+   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0]
+  });
+  rect(0,75,23,330,55,0x0a1622,24);
+  this.city=txt(0,82,26,316,49,'Antwerpen',31,C.white);
+  rect(0,120,418,240,28,0x0a1622,13);
+  this.radarSource=txt(0,124,421,232,23,'Buienradar.nl',14,C.white);
+  // PAGE 2 — clear, large 2-hour rainfall graph.
+  create(1,ui.widget.IMG,{x:153,y:34,w:174,h:37,src:'buienradar-logo.png'});
+  txt(1,74,91,332,39,'REGENVERWACHTING',24,C.muted);
+  this.rainState=txt(1,69,136,342,52,'Gegevens laden…',27,C.white);
+  this.rainDetail=txt(1,81,192,318,45,'De komende 2 uur',20,C.muted);
+  rect(1,62,365,358,2,C.line);
+  for(let i=0;i<12;i++){
+   rect(1,68+i*29,267,17,1,C.line);
+   rect(1,68+i*29,314,17,1,C.line);
+  }
+  for(let i=0;i<24;i++)this.bars.push(
+   rect(1,74+i*14,362,10,4,C.empty,3)
+  );
+  rect(1,66,246,3,122,C.orange);
+  txt(1,57,378,75,25,'NU',17);
+  txt(1,152,378,82,25,'30 min',16,C.muted);
+  txt(1,260,378,85,25,'60 min',16,C.muted);
+  txt(1,353,378,70,25,'2 uur',16,C.muted);
+  // PAGE 3 — compact, visual information and much larger values.
+  create(2,ui.widget.IMG,{x:130,y:33,w:220,h:47,src:'buienradar-logo.png'});
+  this.detailTitle=txt(2,85,100,310,41,'HET VOLGENDE UUR',22,C.muted);
+  this.weatherIcon=create(2,ui.widget.IMG,{
+   x:88,y:166,w:113,h:113,src:'weather-cloud.png'
+  });
+  this.temp=txt(2,211,167,178,98,'--°',62);
+  txt(2,216,251,169,25,'GEMETEN',16,C.muted);
+  rect(2,77,293,326,2,C.line);
+  create(2,ui.widget.IMG,{x:84,y:307,w:67,h:67,src:'weather-drop.png'});
+  this.amount=txt(2,164,310,242,61,'-- mm',37,C.blue);
+  create(2,ui.widget.IMG,{x:89,y:382,w:57,h:57,src:'weather-wind.png'});
+  this.wind=txt(2,155,375,252,60,'-- km/u',29);
+  this.gusts=txt(2,165,428,220,25,'Windstoten: --',16,C.muted);
+  this.station=txt(2,118,457,244,20,'',12,C.muted);
+  // Small page dots on every native page: these travel with the swipe.
+  for(let i=0;i<3;i++){
+   const marks=[];
+   for(let j=0;j<3;j++)marks.push(rect(
+    i,216+j*24,454,8,8,j===i?C.white:0x6c8090,4));
+   this.indicators.push(marks);
+  }
+  this.initRadarInbox();
+  this.frameTimer=setInterval(()=>{
+   if(this.screen===0)this.nextRadarFrame();
+  },950);
+  this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
   void this.refresh();
+ },
+ paintIndicators(){
+  for(let i=0;i<3;i++){
+   const marks=this.indicators[i]||[];
+   for(let j=0;j<marks.length;j++)
+    marks[j].setProperty(ui.prop.COLOR,i===j?C.white:0x6c8090);
+  }
  },
  initRadarInbox(){
   try{
    this.transfer=new TransferFile();
-   const inbox=this.transfer.getInbox();
-   const handled={};
+   const inbox=this.transfer.getInbox(),handled={};
    const handle=()=>{
     const file=inbox.getNextFile();
     if(!file||!file.params||file.params.kind!=='buienradar-frame')return;
-    const params=file.params,index=Number(params.frameIndex);
-    const session=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
-    if(handled[session])return;
+    const index=Number(file.params.frameIndex);
     if(!Number.isInteger(index)||index<0||index>=12)return;
-    const load=()=>{
-     if(this.disposed||!file.filePath)return;
-     if(this.radarBatchStamp!==params.generatedAt)return;
+    const id=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
+    if(handled[id])return;
+    const entry={file,done:false,load:()=>{
+     if(this.disposed||!file.filePath||this.radarStamp!==file.params.generatedAt)return;
      this.liveFrames[index]=file.filePath;
      const ready=this.liveFrames.filter(Boolean).length;
-     this.radarSource.setProperty(ui.prop.TEXT,
-      'Buienradar.nl · '+ready+'/'+this.liveFrames.length+' beelden');
+     // Never switch to an incomplete download by replacing the existing frames.
      if(ready>=2){
-      this.radarPaths=this.liveFrames.slice(0,ready);
-      this.nextRadarFrame();
-      this.radarMessage.setProperty(ui.prop.TEXT,'');
-      try{cache.setItem('buienradar.radar-frames.v1',JSON.stringify({
-       frames:this.radarPaths,generatedAt:this.radarBatchStamp
-      }));}catch(_){}
-     }else if(ready===1){
-      this.radarWidget.setProperty(ui.prop.MORE,{src:file.filePath});
+      const contiguous=[];
+      for(const p of this.liveFrames){if(!p)break;contiguous.push(p);}
+      if(contiguous.length>=2){
+       this.radarPaths=contiguous;
+       this.radarSource.setProperty(ui.prop.TEXT,'Buienradar.nl · bijgewerkt');
+       try{storage.setItem('buienradar.radar-frames.v1',JSON.stringify({
+        frames:this.radarPaths,generatedAt:this.radarStamp
+       }));}catch(_){}
+      }
      }
      if(this.pendingFrame&&this.pendingFrame.index===index){
       this.pendingFrame.resolve();this.pendingFrame=null;
      }
-    };
-    handled[session]={file,load,done:false};
-    if(file.readyState==='transferred'){load();handled[session].done=true;return;}
-    if(typeof file.on==='function')file.on('change',ev=>{
-     const state=ev&&ev.data&&ev.data.readyState||file.readyState;
-     if(state==='transferred'){load();handled[session].done=true;}
+    }};
+    handled[id]=entry;
+    if(file.readyState==='transferred'){entry.load();entry.done=true;return;}
+    if(typeof file.on==='function')file.on('change',event=>{
+     const state=event&&event.data&&event.data.readyState||file.readyState;
+     if(state==='transferred'){entry.load();entry.done=true;}
      else if(state==='error'||state==='canceled'){
       if(this.pendingFrame&&this.pendingFrame.index===index){
-       this.pendingFrame.reject(Error('BLE ontvangst '+state));this.pendingFrame=null;
+       this.pendingFrame.reject(Error('BLE ontvangst mislukt'));this.pendingFrame=null;
       }
      }
     });
    };
    const sweep=()=>{
-    for(const entry of Object.values(handled)){
+    for(const entry of Object.values(handled))
      if(!entry.done&&entry.file.readyState==='transferred'){
       entry.load();entry.done=true;
      }
-    }
    };
    inbox.on('NEWFILE',()=>{handle();sweep();});
-   // FILE means completion even on devices that omit the per-file callback.
    inbox.on('FILE',()=>{sweep();handle();sweep();});
-  }catch(_){this.radarSource.setProperty(ui.prop.TEXT,'Zepp-overdracht niet beschikbaar');}
+  }catch(_){/* Offline bundled animation remains playable. */}
  },
  nextRadarFrame(){
-  if(this.disposed||!this.radarWidget||!this.radarPaths.length)return;
+  if(this.disposed||!this.radarPaths.length)return;
   this.frameIndex=(this.frameIndex+1)%this.radarPaths.length;
   const file=this.radarPaths[this.frameIndex];
   if(file)this.radarWidget.setProperty(ui.prop.MORE,{src:file});
- },
- radarFailed(message){
-  if(this.disposed)return;
-  this.radarMessage.setProperty(ui.prop.TEXT,String(message||'Radar tijdelijk niet beschikbaar').slice(0,110));
- },
- setVisibility(){
-  for(let p=0;p<3;p++)for(const item of this.parts[p])
-   item.setProperty(ui.prop.VISIBLE,p===this.screen&&
-    true);
-  this.dots.forEach((dot,i)=>dot.setProperty(ui.prop.COLOR,
-   i===this.screen?C.white:C.dim));
- },
- setPage(next){
-  this.screen=Math.max(0,Math.min(2,next));
-  this.setVisibility();
-  if(this.screen===0&&(!this.radarAt||Date.now()-this.radarAt>5*60*1000))
-   void this.requestRadar();
  },
  async phone(msg,timeout=20000){
   if(!this.messaging||typeof this.messaging.request!=='function')
    throw Error('Zepp telefoonverbinding ontbreekt');
   return this.messaging.request(msg,{timeout});
  },
- async fetchRadarManifest(){
-  const manifest=await this.phone({method:'radar.manifest'},18000);
-  if(!manifest||manifest.ok!==true||!manifest.frameCount)
-   throw Error(manifest&&manifest.error||'Animatie tijdelijk niet beschikbaar');
-  return manifest;
- },
  async downloadSingleFrame(index){
-  const response=await this.phone({method:'radar.frame',params:{index}},10000);
-  if(!response||response.ok!==true)
-   throw Error(response&&response.error||'Frame ophalen mislukt');
+  const res=await this.phone({method:'radar.frame',params:{index}},10000);
+  if(!res||res.ok!==true)throw Error(res&&res.error||'Frame niet beschikbaar');
   if(this.liveFrames[index])return;
   await new Promise((resolve,reject)=>{
    const timer=setTimeout(()=>{
     if(this.pendingFrame&&this.pendingFrame.index===index)this.pendingFrame=null;
-    reject(Error('Horloge ontvangt frame '+(index+1)+' niet'));
+    reject(Error('Frameoverdracht verlopen'));
    },46000);
    this.pendingFrame={index,
     resolve:()=>{clearTimeout(timer);resolve();},
-    reject:error=>{clearTimeout(timer);reject(error);}
+    reject:e=>{clearTimeout(timer);reject(e);}
    };
    if(this.liveFrames[index]){
     this.pendingFrame.resolve();this.pendingFrame=null;
@@ -202,90 +203,96 @@ Page(BasePage({
   if(this.disposed||this.radarSyncing)return;
   this.radarSyncing=true;
   try{
-   const manifest=await this.fetchRadarManifest();
-   if(manifest.generatedAt===this.radarBatchStamp&&this.radarPaths.length>=3)return;
-   this.radarBatchStamp=manifest.generatedAt;
+   const manifest=await this.phone({method:'radar.manifest'},15000);
+   if(!manifest||manifest.ok!==true||!manifest.frameCount)return;
+   if(manifest.generatedAt===this.radarStamp&&this.radarPaths.length>=3)return;
+   this.radarStamp=manifest.generatedAt;
    this.liveFrames=new Array(manifest.frameCount).fill(null);
-   this.radarSource.setProperty(ui.prop.TEXT,'Buienradar.nl · synchroniseren');
-   for(let i=0;i<manifest.frameCount;i++){
-    if(this.disposed)break;
+   // Refresh silently; pre-installed loop remains visible throughout.
+   for(let i=0;i<manifest.frameCount&&!this.disposed;i++)
     try{await this.downloadSingleFrame(i);}
-    catch(err){this.radarFailed('RADAR: '+String(err&&err.message||err));break;}
-   }
-  }catch(e){
-   if(!this.disposed)this.radarFailed('RADAR: '+String(e&&e.message||e));
-  }finally{this.radarSyncing=false;}
+    catch(_){break;}
+  }catch(_){}finally{this.radarSyncing=false;}
  },
  draw(){
-  const d=this.rain||ZERO;
+  if(this.disposed)return;
+  const d=this.rain||EMPTY;
   if(!d.ok||!d.summary||!Array.isArray(d.points)){
-   this.rainState.setProperty(ui.prop.TEXT,'GEEN NEERSLAGDATA');
-   this.rainDetail.setProperty(ui.prop.TEXT,'Open Zepp en vernieuw');
-   this.temp.setProperty(ui.prop.TEXT,'-- °C');
+   this.rainState.setProperty(ui.prop.TEXT,'GEEN GEGEVENS');
+   this.rainDetail.setProperty(ui.prop.TEXT,'Open Zepp voor een update');
+   this.temp.setProperty(ui.prop.TEXT,'--°');
    this.amount.setProperty(ui.prop.TEXT,'-- mm');
-   this.wind.setProperty(ui.prop.TEXT,'--  /  --');
+   this.wind.setProperty(ui.prop.TEXT,'-- km/u');
    this.gusts.setProperty(ui.prop.TEXT,'Windstoten: --');
-   this.station.setProperty(ui.prop.TEXT,'Weerstation: niet beschikbaar');
-   for(const bar of this.bars){bar.setProperty(ui.prop.H,3);
-    bar.setProperty(ui.prop.Y,350);bar.setProperty(ui.prop.COLOR,C.empty);}
+   this.station.setProperty(ui.prop.TEXT,'');
+   for(const b of this.bars){
+    b.setProperty(ui.prop.H,4);b.setProperty(ui.prop.Y,362);
+    b.setProperty(ui.prop.COLOR,C.empty);
+   }
    return;
   }
-  this.city.setProperty(ui.prop.TEXT,d.location&&d.location.name||'Buienradar');
+  this.city.setProperty(ui.prop.TEXT,d.location&&d.location.name||'Antwerpen');
   this.rainState.setProperty(ui.prop.TEXT,d.summary.headline);
-  this.rainState.setProperty(ui.prop.COLOR,d.summary.rainingNow?C.orange:C.white);
+  this.rainState.setProperty(ui.prop.COLOR,
+   d.summary.rainingNow?C.orange:C.white);
   this.rainDetail.setProperty(ui.prop.TEXT,d.summary.detail);
-  const mm=d.points.slice(0,24).map(p=>Number(p.mmh)||0);
-  const maximum=Math.max(1,...mm);
-  mm.forEach((n,i)=>{
-   const h=n<0.03?3:Math.max(12,Math.round(Math.sqrt(n/maximum)*154));
-   this.bars[i].setProperty(ui.prop.H,h);
-   this.bars[i].setProperty(ui.prop.Y,353-h);
-   this.bars[i].setProperty(ui.prop.COLOR,n<0.03?C.empty:C.rain);
-  });
-  const v=d.station||{};
-  const valid=x=>typeof x==='number'&&Number.isFinite(x);
-  this.temp.setProperty(ui.prop.TEXT,valid(v.temperature)?
-   Math.round(v.temperature)+' °C':'-- °C');
-  this.amount.setProperty(ui.prop.TEXT,valid(d.nextHourMm)?
-   d.nextHourMm.toFixed(1)+' mm':'-- mm');
-  this.wind.setProperty(ui.prop.TEXT,(v.direction||'--')+'  '+
-   (valid(v.windKmh)?Math.round(v.windKmh)+' km/u':'-- km/u'));
-  this.gusts.setProperty(ui.prop.TEXT,'Windstoten: '+
-   (valid(v.gustKmh)?Math.round(v.gustKmh)+' km/u':'--'));
-  this.station.setProperty(ui.prop.TEXT,v.station?
-   'Meting: '+v.station+' ('+v.distanceKm+' km)':'Geen weerstation in de buurt');
+  const mm=d.points.slice(0,24).map(p=>valid(p.mmh)?p.mmh:0);
+  const max=Math.max(1,...mm);
+  for(let i=0;i<24;i++){
+   const n=mm[i]||0;
+   const h=n<0.03?4:Math.max(11,Math.round(Math.sqrt(n/max)*115));
+   const b=this.bars[i];
+   b.setProperty(ui.prop.H,h);
+   b.setProperty(ui.prop.Y,365-h);
+   b.setProperty(ui.prop.COLOR,n<0.03?C.empty:C.bar);
+  }
+  const w=d.station||{};
+  this.temp.setProperty(ui.prop.TEXT,shown(w.temperature,'°'));
+  this.amount.setProperty(ui.prop.TEXT,
+   valid(d.nextHourMm)?d.nextHourMm.toFixed(1)+' mm':'-- mm');
+  this.wind.setProperty(ui.prop.TEXT,
+   (w.direction||'--')+'  '+shown(w.windKmh,' km/u'));
+  this.gusts.setProperty(ui.prop.TEXT,
+   'Windstoten '+shown(w.gustKmh,' km/u'));
+  this.station.setProperty(ui.prop.TEXT,w.station?
+   'Meting: '+w.station:'Geen lokale meting');
+  let src='weather-cloud.png';
+  const description=String(w.weatherDescription||'').toLowerCase();
+  if(/regen|bui|motregen|rain|drizzle|sneeuw/.test(description))
+   src='weather-rain.png';
+  else if(/zonnig|helder|sunny|clear/.test(description))
+   src='weather-sun.png';
+  this.weatherIcon.setProperty(ui.prop.MORE,{src});
  },
  storeShortcut(d){
   try{
-   const summ=d&&d.summary;
-   if(!summ||!d.location)return;
-   cache.setItem('buienradar.shortcut',JSON.stringify({
-    location:d.location.name,headline:summ.headline,detail:summ.detail,
-    at:Date.now()
+   storage.setItem('buienradar.shortcut',JSON.stringify({
+    location:d.location.name,headline:d.summary.headline,
+    detail:d.summary.detail,at:Date.now()
    }));
   }catch(_){}
  },
- async refresh(forceRadar=false){
+ async refresh(){
   if(this.disposed||this.loading)return;
   this.loading=true;
   try{
-   const params={};
-   const r=await this.phone({method:'rain.forecast',params},25000);
+   const result=await this.phone({method:'rain.forecast',params:{}},25000);
    if(this.disposed)return;
-   this.rain=r&&r.ok===true?r:ZERO;
+   this.rain=result&&result.ok===true?result:EMPTY;
    this.draw();
    if(this.rain.ok)this.storeShortcut(this.rain);
-   if(this.screen===0)void this.requestRadar();
   }catch(_){
-   if(!this.disposed){this.rain=ZERO;this.draw();}
-  }finally{this.loading=false;}
+   this.rain=EMPTY;this.draw();
+  }finally{
+   this.loading=false;
+   if(this.screen===0)void this.requestRadar();
+  }
  },
  onDestroy(){
   this.disposed=true;
-  if(this.timer!==undefined)clearInterval(this.timer);
   if(this.frameTimer!==undefined)clearInterval(this.frameTimer);
+  if(this.weatherTimer!==undefined)clearInterval(this.weatherTimer);
   if(this.pendingFrame)this.pendingFrame.reject(Error('App gesloten'));
   this.pendingFrame=null;
-  offGesture();
  }
 }));
