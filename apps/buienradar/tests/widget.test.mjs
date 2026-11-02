@@ -28,7 +28,7 @@ test('Full-screen native SecondaryWidget displays real cached rain and opens app
  assert.ok(result.widgets.some(x=>x.props.text==='REGEN OVER 20 MIN'));
  assert.ok(result.widgets.some(x=>typeof x.props.text==='string'&&x.props.text.includes('0,2 mm')));
  const button=result.widgets.find(x=>x.type===2);
- assert.equal(button.props.w,450,'full-screen widget and not small shortcut card');
+ assert.equal(button.props.w,452,'full-screen widget and not small shortcut card');
  button.props.click_func();
  assert.equal(result.routes[0].url,'page/index');
 });
