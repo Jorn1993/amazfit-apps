@@ -3,6 +3,7 @@ import {setScrollMode, SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
 import TransferFile from '@zos/ble/TransferFile';
 import {LocalStorage} from '@zos/storage';
 import {push} from '@zos/router';
+import {onDigitalCrown,offDigitalCrown,KEY_HOME} from '@zos/interaction';
 import {set as setAlarm, cancel as cancelAlarm} from '@zos/alarm';
 import {BasePage} from '@zeppos/zml/base-page';
 
@@ -61,6 +62,7 @@ Page(BasePage({
   this.radarPaths=Array.from({length:6},(_,i)=>'radar-frame-'+i+'.png');
   this.frameIndex=0;this.pendingFrame=null;this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];
+  this.cityLabels=[];this.lastCrown=0;
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
   this.lastAlertKey=null;
   try{
@@ -96,84 +98,81 @@ Page(BasePage({
    this.pageViews.push(view);
    rect(i,0,0,SIZE,SIZE,C.bg);
   }
-  // Design v0.8: a single scale, one typographic hierarchy, and safe
-  // content bounds inside a 480px circular watch (radius 240).
-  // PAGE 1 — full-screen animated radar. Only two compact controls.
+  // One consistent, circle-safe layout system. No floating gear or map
+  // controls. Tap the city on ANY screen for settings.
+  const cityButton=(page)=>{
+   const button=create(page,ui.widget.BUTTON,{
+    x:151,y:26,w:178,h:50,text:'Antwerpen',text_size:24,
+    color:C.white,normal_color:page===0?0x071a28:0x112737,
+    press_color:0x244c64,radius:24,
+    click_func:()=>push({url:'page/settings'})
+   });
+   this.cityLabels.push(button);return button;
+  };
+  // RADAR — uninterrupted animated map. Frame timestamp is bottom-center,
+  // already rasterized into the source; the crown provides zoom.
   this.radarWidget=create(0,ui.widget.IMG,{
-   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],
-   auto_scale:true,auto_scale_obj_fit:true
+   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true
   });
-  rect(0,161,25,158,46,0x081c2a,23);
-  this.city=txt(0,168,30,144,36,'Antwerpen',24,C.white);
-  this.markerPieces=[
-   rect(0,0,0,18,3,0xffd850),rect(0,0,0,18,3,0xffd850),
-   rect(0,0,0,3,18,0xffd850),rect(0,0,0,3,18,0xffd850)
-  ];
-  this.zoomIn=create(0,ui.widget.BUTTON,{x:397,y:166,w:48,h:48,
-   text:'+',text_size:30,color:C.white,normal_color:0x091e2d,
-   press_color:0x1b4c66,radius:23,click_func:()=>this.changeZoom(1)});
-  this.zoomOut=create(0,ui.widget.BUTTON,{x:397,y:224,w:48,h:48,
-   text:'−',text_size:30,color:C.white,normal_color:0x091e2d,
-   press_color:0x1b4c66,radius:23,click_func:()=>this.changeZoom(-1)});
-  this.placeMarker();
+  this.city=cityButton(0);
+  // The uncalibrated yellow marker is intentionally NOT drawn: Buienradar's
+  // Belgium image API doesn't expose reliable map bounds/projection metadata.
 
-  // PAGE 2 — one uncluttered focal point, controls at the same scale.
-  this.rainTitle=txt(1,149,51,182,44,'REGEN',35,C.white);
+  // RAIN — large status, simple horizon selector, uncluttered chart.
+  cityButton(1);
   this.horizon=2;
-  this.horizonOne=create(1,ui.widget.BUTTON,{x:113,y:111,w:122,h:47,
-   text:'1 UUR',text_size:20,color:C.white,normal_color:0x162e40,
-   press_color:0x1c4b67,radius:22,click_func:()=>this.setHorizon(1)});
-  this.horizonTwo=create(1,ui.widget.BUTTON,{x:245,y:111,w:122,h:47,
-   text:'2 UUR',text_size:20,color:C.white,normal_color:0x236b95,
-   press_color:0x205a79,radius:22,click_func:()=>this.setHorizon(2)});
-  this.rainState=txt(1,67,167,346,61,'LADEN…',38,C.white);
-  this.rainDetail=txt(1,100,227,280,38,'',23,C.muted);
-  rect(1,79,369,322,2,C.line);
-  for(let i=0;i<24;i++){
-   this.bars.push(rect(1,86+i*13,366,9,4,C.empty,3));
-  }
+  this.rainState=txt(1,49,112,382,61,'LADEN…',36,C.white);
+  this.rainDetail=txt(1,73,180,334,39,'',23,C.muted);
+  this.horizonOne=create(1,ui.widget.BUTTON,{x:113,y:232,w:122,h:50,
+   text:'1 uur',text_size:23,color:C.white,normal_color:0x132a3a,
+   press_color:0x275a78,radius:24,click_func:()=>this.setHorizon(1)});
+  this.horizonTwo=create(1,ui.widget.BUTTON,{x:245,y:232,w:122,h:50,
+   text:'2 uur',text_size:23,color:C.white,normal_color:0x266c91,
+   press_color:0x275a78,radius:24,click_func:()=>this.setHorizon(2)});
+  rect(1,83,377,314,2,C.line);
+  for(let i=0;i<24;i++)this.bars.push(
+   rect(1,87+i*13,374,9,3,C.empty,3));
   this.graphTicks=[
-   txt(1,85,386,69,29,'NU',19,C.white),
-   txt(1,160,386,78,29,'30 min',18,C.muted),
-   txt(1,251,386,78,29,'60 min',18,C.muted),
-   txt(1,327,386,68,29,'2 uur',18,C.muted)
+   txt(1,86,393,58,29,'Nu',19,C.white),
+   txt(1,160,393,74,29,'30m',19,C.muted),
+   txt(1,250,393,74,29,'60m',19,C.muted),
+   txt(1,339,393,57,29,'2u',19,C.muted)
   ];
 
-  // PAGE 3 — one hero and two balanced glance cards. No text below y=401.
-  this.detailTitle=txt(2,149,49,183,48,'WEER',35,C.white);
-  this.settingsButton=create(2,ui.widget.BUTTON,{x:365,y:100,w:53,h:48,
-   text:'⚙',text_size:28,color:C.white,normal_color:0x162e40,
-   press_color:0x286280,radius:22,
-   click_func:()=>push({url:'page/settings'})});
-  rect(2,80,131,320,143,0x102838,29);
+  // WEATHER — open hero, two lightweight glance cards, no extra gear.
+  cityButton(2);
   this.weatherIcon=create(2,ui.widget.IMG,{
-   x:102,y:146,w:110,h:110,src:'weather-cloud.png',auto_scale:true
+   x:102,y:141,w:113,h:113,src:'weather-cloud.png',auto_scale:true
   });
-  this.temp=txt(2,212,142,162,90,'--°',72,C.white);
-  txt(2,222,231,142,31,'NU',20,C.muted);
+  this.temp=txt(2,213,137,166,104,'--°',76,C.white);
+  txt(2,214,235,165,28,'NU',20,C.muted);
+  rect(2,85,286,148,109,0x112839,25);
+  rect(2,247,286,148,109,0x112839,25);
+  create(2,ui.widget.IMG,{x:137,y:299,w:41,h:41,
+   src:'weather-drop.png',auto_scale:true});
+  this.amount=txt(2,93,338,133,47,'-- mm',30,C.blue);
+  this.rainPeriod=txt(2,106,373,107,21,'1 UUR',18,C.muted);
+  create(2,ui.widget.IMG,{x:301,y:299,w:39,h:39,
+   src:'weather-wind.png',auto_scale:true});
+  this.wind=txt(2,251,338,141,46,'--',29,C.white);
+  this.gusts=txt(2,259,374,126,23,'',18,C.muted);
+  this.station=txt(2,177,418,128,18,'',13,C.muted);
 
-  // Equal panels yield visibly intentional alignment and prevent clipping.
-  rect(2,85,286,147,110,0x102838,24);
-  rect(2,247,286,148,110,0x102838,24);
-  create(2,ui.widget.IMG,{
-   x:105,y:302,w:41,h:41,src:'weather-drop.png',auto_scale:true
-  });
-  this.amount=txt(2,138,300,90,48,'--',30,C.blue);
-  txt(2,100,353,119,27,'1 UUR',18,C.muted);
-  create(2,ui.widget.IMG,{
-   x:261,y:302,w:38,h:38,src:'weather-wind.png',auto_scale:true
-  });
-  this.wind=txt(2,292,299,97,48,'--',28,C.white);
-  this.gusts=txt(2,252,352,139,28,'',17,C.muted);
-  this.station=txt(2,169,421,141,18,'',12,C.muted);
-
-  // Native swiper remains. Dots are intentionally visible above bottom arc.
+  // Subtle page dots, same position across all pages.
   for(let i=0;i<3;i++){
-   const marks=[];
-   for(let j=0;j<3;j++)marks.push(rect(
-    i,216+j*24,453,8,8,j===i?C.white:0x587081,4));
-   this.indicators.push(marks);
+   const dots=[];
+   for(let j=0;j<3;j++)dots.push(rect(
+    i,216+j*24,456,8,8,i===j?C.white:0x4d6676,4));
+   this.indicators.push(dots);
   }
+  // Watch crown is the radar zoom control, rather than small on-map buttons.
+  try{onDigitalCrown({callback:(key,degree)=>{
+   if(key!==KEY_HOME||this.screen!==0||this.disposed)return;
+   const now=Date.now();
+   if(now-this.lastCrown<180)return;
+   this.lastCrown=now;
+   this.changeZoom(degree<0?1:-1);
+  }});}catch(_){}
   this.initRadarInbox();
   this.configTick=0;
   this.lastConfigSignature=String(storage.getItem('buienradar.location')||'')+'|'+
@@ -249,17 +248,7 @@ Page(BasePage({
  nextRadarFrame(){
   if(this.disposed||!this.radarPaths.length)return;
   this.frameIndex=(this.frameIndex+1)%this.radarPaths.length;
-  const file=this.radarPaths[this.frameIndex];
-  if(file){
-   const z=this.zoom||1;
-   const mx=this.markerX||217,my=this.markerY||209;
-   this.radarWidget.setProperty(ui.prop.MORE,{
-    x:z===1?0:Math.round(240-mx*z),
-    y:z===1?0:Math.round(240-my*z),
-    w:Math.round(SIZE*z),h:Math.round(SIZE*z),
-    src:file,auto_scale:true
-   });
-  }
+  this.applyRadarFrame();
  },
  async phone(msg,timeout=20000){
   if(!this.messaging||typeof this.messaging.request!=='function')
@@ -321,7 +310,7 @@ Page(BasePage({
   }
   const received=d.location||this.location;
   this.location=received;
-  this.city.setProperty(ui.prop.TEXT,received.name||'Antwerpen');
+  this.updateCityLabels(received.name||'Antwerpen');
   this.placeMarker();
   this.scheduleRainAlert(d);
   this.renderForecast();
@@ -383,7 +372,7 @@ Page(BasePage({
   try{
    const loc=JSON.parse(storage.getItem('buienradar.location')||'null');
    if(loc&&loc.name){this.location=loc;
-    this.city.setProperty(ui.prop.TEXT,loc.name);this.placeMarker();}
+    this.updateCityLabels(loc.name);}
   }catch(_){}
   void this.refresh();
  },
@@ -400,41 +389,29 @@ Page(BasePage({
    }
   }catch(_){}
   if(this.city){
-   this.city.setProperty(ui.prop.TEXT,this.location.name||'Antwerpen');
-   this.placeMarker();
+   this.updateCityLabels(this.location.name||'Antwerpen');
   }
  },
- placeMarker(){
-  if(!this.markerPieces||!this.location)return;
-  // Belgium raster is not supplied with an official geo-affine transform.
-  // These points are a visually corrected, indicative map calibration.
-  // Do NOT display this as exact GPS positioning.
-  const loc=this.location;
-  // Calibrated visually against the official 480px Belgium raster;
-  // keep this as an indicative point until authoritative bounds exist.
-  const px=Math.max(46,Math.min(434,246+(loc.lon-4.4025)*75));
-  const py=Math.max(63,Math.min(425,198-(loc.lat-51.2194)*102));
-  this.markerX=px;this.markerY=py;
-  const x=this.zoom===1?px:240,y=this.zoom===1?py:240;
-  const left=Math.round(x-9),top=Math.round(y-9);
-  const shapes=[[left,top,18,3],[left,top+15,18,3],
-   [left,top,3,18],[left+15,top,3,18]];
-  shapes.forEach((v,i)=>this.markerPieces[i].setProperty(ui.prop.MORE,{
-   x:v[0],y:v[1],w:v[2],h:v[3],color:0xffd850
-  }));
+ updateCityLabels(name){
+  const display=String(name||'Antwerpen').slice(0,20);
+  for(const label of this.cityLabels)label.setProperty(ui.prop.TEXT,display);
  },
  changeZoom(direction){
-  const steps=[1,1.3,1.6,2];
-  const index=steps.indexOf(this.zoom||1);
-  this.zoom=steps[Math.max(0,Math.min(steps.length-1,index+direction))];
-  const x=this.markerX||217,y=this.markerY||209;
-  const width=Math.round(SIZE*this.zoom),left=Math.round(240-x*this.zoom);
-  const top=Math.round(240-y*this.zoom);
+  const steps=[1,1.25,1.5,1.85];
+  const current=steps.indexOf(this.zoom||1);
+  this.zoom=steps[Math.max(0,Math.min(steps.length-1,current+direction))];
+  // Without georeferencing, center the display zoom at the map center,
+  // not at an invented location coordinate.
+  this.applyRadarFrame();
+ },
+ applyRadarFrame(){
+  const z=this.zoom||1,side=Math.round(480*z);
   this.radarWidget.setProperty(ui.prop.MORE,{
-   x:left,y:top,w:width,h:width,
-   src:this.radarPaths[this.frameIndex]||this.radarPaths[0],auto_scale:true
+   x:Math.round((480-side)/2),y:Math.round((480-side)/2),
+   w:side,h:side,
+   src:this.radarPaths[this.frameIndex]||this.radarPaths[0],
+   auto_scale:true
   });
-  this.placeMarker();
  },
  renderForecast(){
    const sum=forecastFresh(this.rain)?
@@ -447,13 +424,13 @@ Page(BasePage({
  },
  setHorizon(hours){
   this.horizon=hours===1?1:2;
-  const labels=this.horizon===1?['NU','15 min','30 min','60 min']:
-   ['NU','30 min','60 min','2 uur'];
+  const labels=this.horizon===1?['Nu','15m','30m','60m']:
+   ['Nu','30m','60m','2u'];
   this.graphTicks.forEach((tick,i)=>tick.setProperty(ui.prop.TEXT,labels[i]));
-  this.horizonOne.setProperty(ui.prop.MORE,{x:113,y:111,w:122,h:47,
-   normal_color:this.horizon===1?0x236b95:0x162e40});
-  this.horizonTwo.setProperty(ui.prop.MORE,{x:245,y:111,w:122,h:47,
-   normal_color:this.horizon===2?0x236b95:0x162e40});
+  this.horizonOne.setProperty(ui.prop.MORE,{x:113,y:232,w:122,h:50,
+   normal_color:this.horizon===1?0x266c91:0x132a3a});
+  this.horizonTwo.setProperty(ui.prop.MORE,{x:245,y:232,w:122,h:50,
+   normal_color:this.horizon===2?0x266c91:0x132a3a});
   this.renderForecast();
  },
  renderBars(){
@@ -467,9 +444,9 @@ Page(BasePage({
     b.setProperty(ui.prop.VISIBLE,false);continue;
    }
    b.setProperty(ui.prop.VISIBLE,true);
-   const n=nums[i],height=n<0.03?4:Math.max(11,Math.round(Math.sqrt(n/mx)*89));
-   const x=86+i*(this.horizon===1?26:13);
-   b.setProperty(ui.prop.MORE,{x,y:369-height,w:this.horizon===1?16:9,
+   const n=nums[i],height=n<0.03?3:Math.max(12,Math.round(Math.sqrt(n/mx)*75));
+   const x=87+i*(this.horizon===1?26:13);
+   b.setProperty(ui.prop.MORE,{x,y:377-height,w:this.horizon===1?16:9,
     h:height,color:n<0.03?C.empty:C.bar,radius:3});
   }
  },
@@ -508,6 +485,7 @@ Page(BasePage({
  },
  onDestroy(){
   this.disposed=true;
+  try{offDigitalCrown();}catch(_){}
   if(this.frameTimer!==undefined)clearInterval(this.frameTimer);
   if(this.weatherTimer!==undefined)clearInterval(this.weatherTimer);
   if(this.pendingFrame)this.pendingFrame.reject(Error('App gesloten'));
