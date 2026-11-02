@@ -137,9 +137,12 @@ async function runRadar(id){
   stage('convert',null,id);
   if(typeof image==='undefined'||typeof image.convert!=='function')
    throw Error('CONVERT: image.convert ontbreekt in Zepp');
-  const converted=await delayFail(
-   image.convert({filePath:path,targetFilePath:'data://download/buienradar-be-'+id+'.img'}),
-   12000,'CONVERT');
+  let converted;
+  try{
+   converted=await delayFail(
+    image.convert({filePath:path,targetFilePath:'data://download/buienradar-be-'+id+'.img'}),
+    12000,'CONVERT');
+  }catch(e){throw Error('CONVERT: '+String(e&&e.message||e).slice(0,62));}
   if(!converted||!converted.targetFilePath)
    throw Error('CONVERT: geen uitvoerbestand');
   stage('transfer',null,id);
