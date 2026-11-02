@@ -6,7 +6,7 @@ const CITIES=[
  ['Luik',50.6326,5.5797],['Amsterdam',52.3676,4.9041],
  ['Rotterdam',51.9244,4.4777],['Maastricht',50.8514,5.691]
 ];
-const VERSION='0.1.0';
+const VERSION='0.2.0';
 let name='',lat='',lon='';
 AppSettingsPage({
  build(props){
@@ -27,7 +27,7 @@ AppSettingsPage({
    marginBottom:'12px',clear:'both'}},[x]));
   add(Text({bold:true,style:{fontSize:'28px',color:ink}},'BUIENRADAR'));
   add(Text({paragraph:true,style:{color:muted,fontSize:'13px',lineHeight:'1.5'}},
-   'Neerslag per 5 minuten, automatisch ververst zolang de app open is. GPS werkt op verzoek vanaf je horloge.'));
+   'Drie veegschermen: officiële radar, grote regengrafiek en weer van een nabij meetstation. Neerslag ververst iedere 5 minuten. GPS alleen op verzoek.'));
   add(Text({bold:true,style:{fontSize:'17px',color:ink}},'Locatie: '+active.name));
   for(const city of CITIES){
    const selected=active.name===city[0];
@@ -58,7 +58,7 @@ AppSettingsPage({
   add(Text({paragraph:true,style:{color:muted,fontSize:'13px'}},
    'Buienradar voor Balance 2 · v'+VERSION+' · Onafhankelijke testapp'));
   add(Text({paragraph:true,style:{color:muted,fontSize:'13px'}},
-   'Nieuwere versies worden automatisch gebouwd op GitHub. Developer-installaties via QR moeten opnieuw gescand worden; Zepp biedt hiervoor geen bevestigde stille update.'));
+   'Nieuwe versies krijgen automatisch een installatie-QR, maar niet automatisch een stille installatie. Swipe rechts vanaf de wijzerplaat en voeg Buienradar toe aan je snelkoppelingskaarten.'));
   add(Link({source:'https://github.com/Jorn1993/amazfit-apps/tree/main/apps/buienradar/public/'},
    [Text({},'Update en installatie-QR')]));
   add(Text({paragraph:true,style:{color:muted,fontSize:'12px'}},
