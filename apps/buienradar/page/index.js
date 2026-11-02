@@ -1,5 +1,4 @@
 import * as ui from '@zos/ui';
-import {Geolocation} from '@zos/sensor';
 import {onGesture,offGesture,GESTURE_LEFT,GESTURE_RIGHT} from '@zos/interaction';
 import TransferFile from '@zos/ble/TransferFile';
 import {LocalStorage} from '@zos/storage';
@@ -14,7 +13,19 @@ const cache=new LocalStorage();
 Page(BasePage({
  build(){
   this.disposed=false;this.loading=false;this.screen=0;this.rain=ZERO;
-  this.gps=null;this.gpsTimeout=null;this.lastGps=null;
+  this.lastGps=null;this.radarSyncing=false;this.radarRequestId=null;
+  this.radarBatchStamp=null;this.liveFrames=[];
+  this.radarPaths=Array.from({length:6},(_,i)=>'radar-frame-'+i+'.png');
+  this.frameIndex=0;this.frameDelayMs=950;this.pendingFrame=null;
+  try{
+   const saved=JSON.parse(cache.getItem('buienradar.radar-frames.v1')||'null');
+   const at=Date.parse(saved&&saved.generatedAt);
+   if(saved&&Array.isArray(saved.frames)&&saved.frames.length>=3&&
+    at>0&&Date.now()-at<45*60000&&
+    saved.frames.every(p=>typeof p==='string'&&p.startsWith('data://'))){
+    this.radarPaths=saved.frames;this.radarBatchStamp=saved.generatedAt;
+   }
+  }catch(_){};
   this.radarWidget=null;this.radarAt=0;this.radarWatchdog=null;
   this.radarPollTimer=null;this.radarRequestedAt=0;this.radarRequestId=null;
   this.parts=[[],[],[]];this.bars=[];
@@ -35,11 +46,12 @@ Page(BasePage({
   this.city=text(null,87,29,306,48,'Buienradar',32);
   this.dots=[0,1,2].map((i)=>rect(null,211+i*27,461,10,10,C.dim,6));
   // 1. Official live Belgian radar image; never use a static screenshot.
-  this.radarTime=text(0,95,83,290,25,'ACTUELE RADAR',17,C.muted);
-  this.radarMessage=text(0,75,201,330,82,'Radar laden...',25,C.muted);
-  this.radarSource=text(0,84,396,312,22,'Beeld: Buienradar.nl',15,C.muted);
-  button(0,112,424,110,33,'VERNIEUW',()=>void this.refresh(true));
-  button(0,258,424,110,33,'GPS',()=>this.useGps());
+  this.radarTime=text(0,95,83,290,25,'RADAR · ANIMATIE',17,C.muted);
+  this.radarWidget=add(0,ui.widget.IMG,{
+   x:58,y:109,w:364,h:282,src:this.radarPaths[0]
+  });
+  this.radarMessage=text(0,75,194,330,88,'',19,C.muted);
+  this.radarSource=text(0,84,397,312,30,'Buienradar.nl · voorbeeld',14,C.muted);
   // 2. Large precipitation timeline. Each bar covers five minutes.
   text(1,80,89,320,42,'NEERSLAG',28);
   this.rainState=text(1,76,130,328,46,'Gegevens laden...',22,C.muted);
@@ -66,6 +78,7 @@ Page(BasePage({
   this.gusts=text(2,86,389,308,32,'Windstoten: --',19,C.muted);
   this.station=text(2,76,428,328,29,'Weerstation: niet beschikbaar',13,C.muted);
   this.initRadarInbox();
+  this.frameTimer=setInterval(()=>this.nextRadarFrame(),this.frameDelayMs);
   onGesture({callback:(event)=>{
    if(event===GESTURE_LEFT&&this.screen<2){this.setPage(this.screen+1);return true;}
    if(event===GESTURE_RIGHT&&this.screen>0){this.setPage(this.screen-1);return true;}
@@ -76,57 +89,68 @@ Page(BasePage({
   void this.refresh();
  },
  initRadarInbox(){
-  this.radarError=false;
   try{
    this.transfer=new TransferFile();
    const inbox=this.transfer.getInbox();
-   const handle=file=>{
-    if(!file||!file.params||file.params.kind!=='buienradar-radar')return;
+   const handled={};
+   const handle=()=>{
+    const file=inbox.getNextFile();
+    if(!file||!file.params||file.params.kind!=='buienradar-frame')return;
+    const params=file.params,index=Number(params.frameIndex);
+    const session=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
+    if(handled[session])return;
+    handled[session]=true;
+    if(!Number.isInteger(index)||index<0||index>=12)return;
     const load=()=>{
      if(this.disposed||!file.filePath)return;
-     if(this.radarRequestId!==null&&file.params&&
-      file.params.requestId!==undefined&&file.params.requestId!==this.radarRequestId)return;
-     try{
-      if(this.radarWidget){
-       this.radarWidget.setProperty(ui.prop.MORE,{src:file.filePath});
-      }else{
-       this.radarWidget=ui.createWidget(ui.widget.IMG,{
-        x:62,y:100,w:356,h:296,src:file.filePath
-       });
-       this.parts[0].push(this.radarWidget);
-      }
-      this.radarError=false;
-      this.stopRadarMonitoring();
-      this.radarMessage.setProperty(ui.prop.VISIBLE,false);
-      this.radarAt=Date.now();this.setVisibility();
-     }catch(_){this.radarFailed('Radar kan niet getoond worden');}
+     if(this.radarBatchStamp!==params.generatedAt)return;
+     this.liveFrames[index]=file.filePath;
+     const ready=this.liveFrames.filter(Boolean).length;
+     this.radarSource.setProperty(ui.prop.TEXT,
+      'Buienradar.nl · '+ready+'/'+this.liveFrames.length+' beelden');
+     if(ready>=2){
+      this.radarPaths=this.liveFrames.slice(0,ready);
+      this.nextRadarFrame();
+      this.radarMessage.setProperty(ui.prop.TEXT,'');
+      try{cache.setItem('buienradar.radar-frames.v1',JSON.stringify({
+       frames:this.radarPaths,generatedAt:this.radarBatchStamp
+      }));}catch(_){}
+     }else if(ready===1){
+      this.radarWidget.setProperty(ui.prop.MORE,{src:file.filePath});
+     }
+     if(this.pendingFrame&&this.pendingFrame.index===index){
+      this.pendingFrame.resolve();this.pendingFrame=null;
+     }
     };
     if(file.readyState==='transferred'){load();return;}
-    if(typeof file.on==='function')file.on('change',event=>{
-     const state=event&&event.data&&event.data.readyState;
+    if(typeof file.on==='function')file.on('change',ev=>{
+     const state=ev&&ev.data&&ev.data.readyState||file.readyState;
      if(state==='transferred')load();
-     else if(state==='error'||state==='canceled')
-      this.radarFailed('Overdracht naar horloge mislukt');
+     else if(state==='error'||state==='canceled'){
+      if(this.pendingFrame&&this.pendingFrame.index===index){
+       this.pendingFrame.reject(Error('BLE ontvangst '+state));this.pendingFrame=null;
+      }
+     }
     });
-  };
-  // Each transfer is consumed once. Consuming both FILE and NEWFILE
-  // can remove the same result before its status callback runs.
-  inbox.on('NEWFILE',()=>handle(inbox.getNextFile()));
-  }catch(_){this.radarFailed('Zepp-overdracht niet beschikbaar');}
+   };
+   inbox.on('NEWFILE',handle);
+   inbox.on('FILE',handle);
+  }catch(_){this.radarSource.setProperty(ui.prop.TEXT,'Zepp-overdracht niet beschikbaar');}
+ },
+ nextRadarFrame(){
+  if(this.disposed||!this.radarWidget||!this.radarPaths.length)return;
+  this.frameIndex=(this.frameIndex+1)%this.radarPaths.length;
+  const file=this.radarPaths[this.frameIndex];
+  if(file)this.radarWidget.setProperty(ui.prop.MORE,{src:file});
  },
  radarFailed(message){
   if(this.disposed)return;
-  this.radarError=true;
-  this.stopRadarMonitoring();
-  this.radarMessage.setProperty(ui.prop.TEXT,String(message||'Radar niet beschikbaar').slice(0,90));
-  this.radarMessage.setProperty(ui.prop.VISIBLE,this.screen===0);
-  if(this.radarWidget)this.radarWidget.setProperty(ui.prop.VISIBLE,false);
-  this.radarAt=0;
+  this.radarMessage.setProperty(ui.prop.TEXT,String(message||'Radar tijdelijk niet beschikbaar').slice(0,110));
  },
  setVisibility(){
   for(let p=0;p<3;p++)for(const item of this.parts[p])
    item.setProperty(ui.prop.VISIBLE,p===this.screen&&
-    (item!==this.radarMessage||!this.radarWidget||this.radarError));
+    true);
   this.dots.forEach((dot,i)=>dot.setProperty(ui.prop.COLOR,
    i===this.screen?C.white:C.dim));
  },
@@ -259,37 +283,12 @@ Page(BasePage({
    if(!this.disposed){this.rain=ZERO;this.draw();}
   }finally{this.loading=false;}
  },
- useGps(){
-  if(this.disposed||this.gps)return;
-  try{
-   const gps=new Geolocation();this.gps=gps;
-   this.radarMessage.setProperty(ui.prop.TEXT,'GPS-locatie bepalen...');
-   const stop=()=>{
-    if(this.gpsTimeout!==null){clearTimeout(this.gpsTimeout);this.gpsTimeout=null;}
-    if(this.gps){try{this.gps.offChange(this.gpsCallback);this.gps.stop();}catch(_){}
-     this.gps=null;}
-   };
-   this.gpsCallback=()=>{
-    if(this.disposed)return;
-    const lat=Number(gps.getLatitude({format:'DD'}));
-    const lon=Number(gps.getLongitude({format:'DD'}));
-    if(Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=49&&lat<=54&&lon>=2&&lon<=8){
-     stop();this.lastGps={lat,lon};void this.refresh();
-    }
-   };
-   gps.onChange(this.gpsCallback);gps.start();
-   this.gpsTimeout=setTimeout(()=>{
-    if(this.gps){stop();this.radarMessage.setProperty(ui.prop.TEXT,'GPS niet gevonden');}
-   },25000);
-   this.gpsCallback();
-  }catch(_){this.gps=null;this.radarMessage.setProperty(ui.prop.TEXT,'GPS niet beschikbaar');}
- },
  onDestroy(){
   this.disposed=true;
   if(this.timer!==undefined)clearInterval(this.timer);
-  this.stopRadarMonitoring();
-  if(this.gpsTimeout!==null)clearTimeout(this.gpsTimeout);
-  if(this.gps){try{this.gps.offChange(this.gpsCallback);this.gps.stop();}catch(_){}}
+  if(this.frameTimer!==undefined)clearInterval(this.frameTimer);
+  if(this.pendingFrame)this.pendingFrame.reject(Error('App gesloten'));
+  this.pendingFrame=null;
   offGesture();
  }
 }));
