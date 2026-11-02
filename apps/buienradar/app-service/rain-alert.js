@@ -9,7 +9,11 @@ AppService({
   try{
    const prefs=JSON.parse(storage.getItem('buienradar.alert')||'null');
    if(!prefs||prefs.enabled!==true)return;
-   const data=typeof options==='string'?JSON.parse(options):options;
+   // Zepp versions may supply the timer payload as a string or wrapped
+   // object. Accept both forms, but never notify from unvalidated data.
+   const wrapped=options&&typeof options==='object'?
+    (options.param||options.params||options):options;
+   const data=typeof wrapped==='string'?JSON.parse(wrapped):wrapped;
    const now=Date.now();
    if(!data||!Number.isFinite(data.onsetAt)||
     !Number.isFinite(data.plannedAt)||now-data.plannedAt>2*3600000||
@@ -19,7 +23,7 @@ AppService({
    })+' in '+String(data.place||'jouw buurt').slice(0,28);
    const id=notify({
     title:'Regen op komst',content,
-    actions:[{text:'Bekijk radar',file:'page/index'}],vibrate:5
+    actions:[],vibrate:5
    });
    if(id<=0)console.log('[Buienradar] notification rejected');
   }catch(_){}

@@ -56,6 +56,7 @@ Page(BasePage({
    const id=Number(store.getItem('buienradar.alert-alarm-id')||0);
    if(id>0)try{cancelAlarm(id);}catch(_){}
    store.setItem('buienradar.alert-alarm-id','0');
+   store.setItem('buienradar.alert-key','');
   }
  },
  toggleAlert(){

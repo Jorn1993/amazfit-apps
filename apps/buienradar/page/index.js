@@ -463,6 +463,7 @@ Page(BasePage({
   if(!prefs||!prefs.enabled||!forecastFresh(d)){
    if(prior>0){try{cancelAlarm(prior);}catch(_){}}
    storage.setItem('buienradar.alert-alarm-id','0');
+   storage.setItem('buienradar.alert-key','');
    this.lastAlertKey=null;
    return;
   }
@@ -471,14 +472,19 @@ Page(BasePage({
   if(onset<=0){
    if(prior>0){try{cancelAlarm(prior);}catch(_){}}
    storage.setItem('buienradar.alert-alarm-id','0');
+   storage.setItem('buienradar.alert-key','');
    this.lastAlertKey=null;return;
   }
   const lead=[5,15,30].includes(prefs.lead)?prefs.lead:15;
-  const onsetAt=Date.now()+onset*5*60000;
-  const key=String(Math.round(onsetAt/(5*60000)))+'-'+(d.location&&d.location.name);
-  if(key===this.lastAlertKey&&prior>0)return;
+  // Anchor the predicted onset to the source forecast, not each rendering
+  // time: otherwise every refresh shifts the same rain event forward.
+  const onsetAt=d.updatedAt+onset*5*60000;
+  const key=String(Math.round(onsetAt/(5*60000)))+'-'+
+   (d.location&&d.location.name)+'-'+lead;
+  if(prior>0&&storage.getItem('buienradar.alert-key')===key)return;
   if(prior>0){try{cancelAlarm(prior);}catch(_){}}
   storage.setItem('buienradar.alert-alarm-id','0');
+  storage.setItem('buienradar.alert-key','');
   const sec=Math.max(3,Math.round((onsetAt-Date.now()-lead*60000)/1000));
   if(sec>2*3600)return;
   const id=setAlarm({url:'app-service/rain-alert',delay:sec,store:true,
@@ -486,6 +492,7 @@ Page(BasePage({
     onsetAt,lead,plannedAt:Date.now()})});
   if(id>0){
    this.lastAlertKey=key;
+   storage.setItem('buienradar.alert-key',key);
    storage.setItem('buienradar.alert-alarm-id',String(id));
   }
  },
