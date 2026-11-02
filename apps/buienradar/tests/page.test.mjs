@@ -105,7 +105,8 @@ test('Useful third page: large temperature, precipitation and wind with genuine 
  assert.equal(t.page.temp.values.text,'12°');
  assert.equal(t.page.temp.values.text_size,72);
  assert.equal(t.page.amount.values.text,'0,2 mm');
- assert.match(t.page.wind.values.text,/NW/);
+ assert.equal(t.page.wind.values.text,'8 km/u');
+ assert.equal(t.page.gusts.values.text,'NW');
  assert.equal(t.page.station.values.text,'');
  assert.equal(t.page.weatherIcon.values.more.src,'weather-cloud.png');
  assert.ok(!t.page.parts[2].some(x=>x.values.src==='buienradar-logo.png'));
