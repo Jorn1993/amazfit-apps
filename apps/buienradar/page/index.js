@@ -408,13 +408,15 @@ Page(BasePage({
   // These points are a visually corrected, indicative map calibration.
   // Do NOT display this as exact GPS positioning.
   const loc=this.location;
-  const px=Math.max(46,Math.min(434,264+(loc.lon-4.4025)*75));
-  const py=Math.max(63,Math.min(425,172-(loc.lat-51.2194)*102));
+  // Calibrated visually against the official 480px Belgium raster;
+  // keep this as an indicative point until authoritative bounds exist.
+  const px=Math.max(46,Math.min(434,246+(loc.lon-4.4025)*75));
+  const py=Math.max(63,Math.min(425,198-(loc.lat-51.2194)*102));
   this.markerX=px;this.markerY=py;
   const x=this.zoom===1?px:240,y=this.zoom===1?py:240;
-  const left=Math.round(x-10),top=Math.round(y-10);
-  const shapes=[[left,top,21,3],[left,top+18,21,3],
-   [left,top,3,21],[left+18,top,3,21]];
+  const left=Math.round(x-9),top=Math.round(y-9);
+  const shapes=[[left,top,18,3],[left,top+15,18,3],
+   [left,top,3,18],[left+15,top,3,18]];
   shapes.forEach((v,i)=>this.markerPieces[i].setProperty(ui.prop.MORE,{
    x:v[0],y:v[1],w:v[2],h:v[3],color:0xffd850
   }));
