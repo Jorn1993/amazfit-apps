@@ -22,6 +22,9 @@ def main():
         with Image.open(io.BytesIO(result.content)) as im:
             if im.format!="PNG" or im.size!=(320,320):
                 raise RuntimeError("Invalid official radar PNG "+url)
-        (ROOT/("radar-frame-"+str(i)+".png")).write_bytes(result.content)
+        # Watch's 480px display fills the entire circular viewport.
+        # Upscale verified source frames with Lanczos instead of a small inset.
+        full = im.convert("RGBA").resize((480,480), Image.Resampling.LANCZOS)
+        full.save(ROOT/("radar-frame-"+str(i)+".png"),"PNG",optimize=True)
     print("Bundled six real animated radar frames; original Buienradar snapshot:",m["generatedAt"])
 if __name__=="__main__":main()

@@ -44,6 +44,7 @@ jobs:
           python -m pip install --quiet requests pillow
           python apps/buienradar/tools/bundle_radar.py
           node apps/buienradar/prepare-assets.mjs
+          python apps/buienradar/tools/generate_branding.py
           (cd apps/buienradar && ../../zeus-cli/node_modules/.bin/zeus build)
       - name: Package developer ZPK and QR
         run: |

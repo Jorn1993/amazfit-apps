@@ -64,7 +64,8 @@ Page(BasePage({
   rect(0,120,418,240,28,0x0a1622,13);
   this.radarSource=txt(0,124,421,232,23,'Buienradar.nl',14,C.white);
   // PAGE 2 — clear, large 2-hour rainfall graph.
-  create(1,ui.widget.IMG,{x:153,y:34,w:174,h:37,src:'buienradar-logo.png'});
+  rect(1,140,24,200,56,0xffffff,16);
+  create(1,ui.widget.IMG,{x:149,y:29,w:182,h:46,src:'buienradar-logo.png'});
   txt(1,74,91,332,39,'REGENVERWACHTING',24,C.muted);
   this.rainState=txt(1,69,136,342,52,'Gegevens laden…',27,C.white);
   this.rainDetail=txt(1,81,192,318,45,'De komende 2 uur',20,C.muted);
@@ -82,7 +83,8 @@ Page(BasePage({
   txt(1,260,378,85,25,'60 min',16,C.muted);
   txt(1,353,378,70,25,'2 uur',16,C.muted);
   // PAGE 3 — compact, visual information and much larger values.
-  create(2,ui.widget.IMG,{x:130,y:33,w:220,h:47,src:'buienradar-logo.png'});
+  rect(2,123,23,234,61,0xffffff,17);
+  create(2,ui.widget.IMG,{x:130,y:28,w:220,h:51,src:'buienradar-logo.png'});
   this.detailTitle=txt(2,85,100,310,41,'HET VOLGENDE UUR',22,C.muted);
   this.weatherIcon=create(2,ui.widget.IMG,{
    x:88,y:166,w:113,h:113,src:'weather-cloud.png'
