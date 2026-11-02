@@ -1,6 +1,6 @@
 # Buienradar — Amazfit Balance 2
 
-**Version 0.2.0 — unofficial Zepp OS 3 prototype.**
+**Version 0.2.1 — unofficial Zepp OS 3 prototype.**
 
 ## Three full-screen pages
 
@@ -10,11 +10,17 @@ Swipe horizontally inside the app:
 2. **Rain forecast** — enlarged 24 × five-minute precipitation graph, now marker, clear two-hour timeline and rain arrival text from official Buienradar data.
 3. **Next hour** — upcoming 60-minute rain total calculated from the 5-minute forecast, plus *current observed* temperature, wind and gusts from the nearest official Buienradar station. Observation station and distance are labelled explicitly; this is not a predicted next-hour temperature.
 
-## Shortcut card — swipe right from watchface
+## Volledig scherm links van de wijzerplaat
 
-A native Zepp **AppWidget (Shortcut Card)** is included. Swipe right from the watchface, scroll to the end of the cards, tap **Edit / Settings → Add** and choose **Buienradar**. The card gives the last known precipitation outlook and location. Tap it to launch the full application.
+Gebruik **Zepp SecondaryWidget**, niet AppWidget/Shortcut Cards. Veeg vanaf de wijzerplaat **naar links**. Voeg Buienradar toe via **Instellingen → Voorkeuren → Widgets → Toevoegen** (de menunamen kunnen per taal verschillen). De volledige, ronde 480×480-widget toont de laatst opgehaalde regenverwachting, locatie en een grote knop om de volledige Buienradar-app te openen.
 
-Zepp's shortcut-card lifecycle cannot be assumed to support live Bluetooth requests at any time. Consequently the card reads the most recent value stored by the full app, and does not present old rainfall as current after 20 minutes. If data is absent or stale, it shows an invitation to open the app.
+De widget mag de Bluetooth-appsideverbinding niet onbeperkt op de achtergrond gebruiken. Daarom wordt de weersvoorspelling bij een leeftijd van meer dan 20 minuten als niet-actueel gemarkeerd en vraag je met één tik een nieuwe update op.
+
+## Radarproblemen
+
+De eerste versie kon eindeloos "laden" tonen omdat het downloaden, omzetten en de Bluetooth-overdracht onzichtbaar op de telefoon verliepen. Sinds 0.2.1 wacht de app expliciet op de overdracht, vernieuwt het IMG-widget correct via de Zepp MORE-property en toont een foutfase of time-out in plaats van een oneindige spinner. Voor verdere diagnose: open **Zepp → Developer Mode → Logs**, verzamel **Device App** en **Side Service**-logs terwijl je de radarpagina opent.
+
+De radar gebruikt de officiële Buienradar-afbeeldingsbron. Het slagen van CI is **geen bewijs** dat de externe radardienst of de live overdracht op jouw Balance 2 bereikbaar is. Foutmeldingen op je horloge zijn leidend.
 
 ## Location and refresh
 
