@@ -39,8 +39,10 @@ jobs:
           node --check apps/buienradar/secondary-widget/index.js
           node --check apps/buienradar/setting/index.js
           node --test apps/buienradar/tests/*.test.mjs
-      - name: Build Zepp mini program
+      - name: Build Zepp mini program with last verified radar animation
         run: |
+          python -m pip install --quiet requests pillow
+          python apps/buienradar/tools/bundle_radar.py
           node apps/buienradar/prepare-assets.mjs
           (cd apps/buienradar && ../../zeus-cli/node_modules/.bin/zeus build)
       - name: Package developer ZPK and QR
