@@ -1,80 +1,50 @@
-# Buienradar — Amazfit Balance 2
+# Buienradar voor Amazfit Balance 2
 
-**Version 0.3.0 — unofficial Zepp OS 3 prototype.**
+**Versie 0.4.0 · privéprototype · Zepp OS 3**
 
-## Animated radar v0.3.0
+Een compacte Nederlandstalige weerapp met drie schermen:
 
-This edition replaces the static map with six real frames from Buienradar's
-**official Belgian animation** \`RadarMapRainWebmercatorBE\`, requested from
-the \`/2.0/image/animation/\` endpoint. A scheduled GitHub Actions job extracts
-the real GIF frames every 15 minutes and publishes a replaceable, validated
-PNG snapshot on the \`radar-cache\` branch.
+1. **Radar** — officiële, bewegende Belgische Buienradar-beelden in een volledig 480 × 480 px scherm, met jouw gekozen plaats als titel. De zes echte radarframes zitten in de installatie en spelen meteen af.
+2. **Neerslag** — een grote grafiek van 24 intervallen van vijf minuten, met status en voorspelling.
+3. **Weer** — grotere temperatuur, regen komende 60 minuten en wind, met iconen. Temperatuur en wind zijn **metingen van een weerstation**, niet voorspellingen voor het komende uur.
 
-The latest six frames are also bundled into each developer installation, so
-the map **moves immediately** on opening without waiting for Bluetooth.
-While open, the watch requests a verified new sequence automatically. The
-Zepp phone service downloads and converts PNG frames, and the watch replaces
-the bundled sequence once at least two fresh frames have really arrived.
+De navigatie gebruikt [Zepp's native horizontale swiper](https://docs.zepp.com/docs/reference/device-app-api/newAPI/page/setScrollMode/) met drie VIEW_CONTAINER-pagina's. De pagina's volgen je vinger tijdens het swipen. Er zijn geen GPS- of vernieuwknoppen.
 
-**No manual GPS or refresh buttons.** The chosen location is read from
-Zepp's Buienradar Settings. The displayed map is currently the country-wide
-Belgian radar product, labelled with the chosen location, *not yet a
-location-centered zoom*. Never imply it is precisely centered on that place
-until a documented coordinate-aware map source is available.
+## Locatie instellen
 
-Frame caches can be delayed by the 15-minute refresh schedule and Bluetooth;
-the bundled fallback is marked as a preview until a fresh transfer.
-A failed download cannot make up fictitious frames. The Side Service uses
-Zepp's official PNG image converter, BLE file transfer, and both 'NEWFILE'
-and 'FILE' receiver events.
+Kies in **Zepp → Buienradar → Instellingen** een plaats in België/Nederland of geef eigen coördinaten op. De app gebruikt die plaats voor regenverwachting en meetstations. De radar zelf is het officiële **overzicht van België**. Een locatiegerichte zoom en marker op de kaart zijn nog niet beschikbaar, dus de kaart is niet exact gecentreerd op de gekozen plaats.
 
-This is a personal development prototype. Buienradar states that their data
-requires permission for mobile-app use. Obtain permission before distributing
-or listing it publicly.
+## Automatische radarupdate
 
-## Three full-screen pages
+De officiële Buienradar-bron is:
 
-Swipe horizontally inside the app:
+\`https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE\`
 
-1. **Radar** — official animated Belgium radar, six real frames with an immediately available bundled preview and automatic updates from Zepp.
-2. **Rain forecast** — enlarged 24 × five-minute precipitation graph, now marker, clear two-hour timeline and rain arrival text from official Buienradar data.
-3. **Next hour** — upcoming 60-minute rain total calculated from the 5-minute forecast, plus *current observed* temperature, wind and gusts from the nearest official Buienradar station. Observation station and distance are labelled explicitly; this is not a predicted next-hour temperature.
+De \`.github/workflows/buienradar-radar.yml\` workflow haalt om de 15 minuten de officiële bewegende GIF op, controleert de frames en publiceert een momentopname in de \`radar-cache\` branch. De app-build gebruikt de laatste gevalideerde momentopname en verpakt zes PNG-frames op schermresolutie in de ZPK.
 
-## Volledig scherm links van de wijzerplaat
+De ingebouwde animatie is onmiddellijk zichtbaar, ook zonder telefoon. Terwijl de app open is kunnen nieuwe geverifieerde frames via de telefoon en Zepp BLE worden ontvangen. Het kan enkele minuten duren voordat ze zijn bijgewerkt. Bij een fout blijft de bestaande animatie beschikbaar, zonder fictieve neerslagdata te tonen.
 
-Gebruik **Zepp SecondaryWidget**, niet AppWidget/Shortcut Cards. Veeg vanaf de wijzerplaat **naar links**. Voeg Buienradar toe via **Instellingen → Voorkeuren → Widgets → Toevoegen** (de menunamen kunnen per taal verschillen). De volledige, ronde 480×480-widget toont de laatst opgehaalde regenverwachting, locatie en een grote knop om de volledige Buienradar-app te openen.
+## Eigen widget
 
-De widget mag de Bluetooth-appsideverbinding niet onbeperkt op de achtergrond gebruiken. Daarom wordt de weersvoorspelling bij een leeftijd van meer dan 20 minuten als niet-actueel gemarkeerd en vraag je met één tik een nieuwe update op.
+Naast de drie appschermen is er een volledige **SecondaryWidget**, voor de kaarten links van de wijzerplaat. Die toont de laatst bekende neerslagverwachting en opent de volledige app bij een tik. Na twintig minuten verschijnt geen verouderde voorspelling meer.
 
-## Radarproblemen
+## Merk en logo
 
-De eerste versie kon eindeloos "laden" tonen omdat het downloaden, omzetten en de Bluetooth-overdracht onzichtbaar op de telefoon verliepen. Sinds 0.2.1 wacht de app expliciet op de overdracht, vernieuwt het IMG-widget correct via de Zepp MORE-property en toont een foutfase of time-out in plaats van een oneindige spinner. Voor verdere diagnose: open **Zepp → Developer Mode → Logs**, verzamel **Device App** en **Side Service**-logs terwijl je de radarpagina opent.
+Een bestaand Buienradar-logo is gebruikt uit een publieke logospiegel, omdat Wikimedia's afbeeldingsserver het automatische verzoek soms afwijst. Het project is onafhankelijk en niet gelieerd aan Buienradar. De build heeft een visuele fallback als beide logobronnen ontbreken.
 
-De radar gebruikt de officiële Buienradar-afbeeldingsbron. Het slagen van CI is **geen bewijs** dat de externe radardienst of de live overdracht op jouw Balance 2 bereikbaar is. Foutmeldingen op je horloge zijn leidend.
+## Installeren en bijwerken
 
-## Location and refresh
+Na een geslaagde CI-run: [nieuwste installatie-QR](public/install-qr.png). Scan in Zepp Developer Mode. De \`buienradar-vX.Y.Z.zpk\` staat in dezelfde \`public/\` map.
 
-The first launch defaults to **Antwerpen**, explicitly configured and not GPS-derived. In Zepp Settings choose a city or custom coordinates. Manual watch GPS is activated only on request and stopped after a result or timeout.
+De regenverwachting wordt automatisch bijgewerkt terwijl de app geopend is. **Nieuwe developer-appversies installeren niet stilletjes**: scan voor een nieuwe versie opnieuw de QR-code.
 
-Rain and radar requests are refreshed every five minutes **while the full watch app is open**. The phone-side service caches data to avoid excessive requests.
+## Bronnen en beperkingen
 
-GitHub Actions automatically builds a new ZPK and installation QR when the source changes. Zepp developer-preview installations **do not silently auto-update**; use [the latest installation QR](public/install-qr.png) to install new releases.
+- [Buienradar — weerdata en gebruiksvoorwaarden](https://www.buienradar.be/overbuienradar/weerdata-op-uw-website)
+- [Zepp OS — Native Swiper](https://docs.zepp.com/docs/reference/device-app-api/newAPI/page/setScrollMode/)
+- [Zepp OS — VIEW_CONTAINER](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/VIEW_CONTAINER/)
+- [Zepp OS — Secondary Widget](https://docs.zepp.com/docs/guides/framework/device/secondary-widget/)
 
-## Sources and permissions
+Buienradar vereist toestemming voor het gebruik van weerdata in mobiele apps, ook bij niet-commercieel gebruik. Deze repository is uitsluitend als persoonlijk prototype bedoeld en heeft geen toestemming voor publieke verspreiding.
 
-- Official Buienradar Belgian radar image: https://www.buienradar.be/overbuienradar/weerdata-op-uw-website
-- Official Buienradar rain and current-station measurements: https://www.buienradar.nl/overbuienradar/gratis-weerdata
-- Official Zepp OS shortcut cards: https://docs.zepp.com/docs/guides/framework/device/secondary-widget/
-- Official Zepp OS image file transfer: https://docs.zepp.com/docs/guides/version-info/new-features-30/
-
-**Buienradar's terms require permission for mobile-app usage, including non-commercial apps, plus source attribution.** Do not distribute or submit this app to the Zepp store until authorized.
-
-## Testing
-
-Automated tests simulate Zepp interface events, file-transfer completion, precipitation decoding, station selection and card display. Device and API compatibility must still be verified on a real Amazfit Balance 2. When live radar fails, the app reports the failure instead of substituting a fake radar.
-
-## Radar v0.2.2 diagnostics
-
-The earlier app could remain on “loading” if the side-service network or file-transfer callback was absent. The radar now requests the Belgian `RadarMapRainBE` static-image endpoint, and uses a two-stage protocol: start immediately, then poll the real Zepp side-service state every few seconds. Messages identify **DOWNLOAD**, **CONVERT**, or **TRANSFER**. A missing response or stalled file transfer ends in an explicit error, not an endless loading message.
-
-Automated tests simulate successful download, HTTP 404, download time-out, failed conversion and Bluetooth errors. They cannot verify the Buienradar image endpoint is reachable from an individual Android/Zepp phone; the real watch error now makes that distinguishable. Check Device App and Side Service logs in Zepp Developer Mode for further details if necessary.
+Alle 23 mock- en unit-tests slaagden voor de v0.4.0-build. Dat bevestigt de pakketbouw, **niet** de werkelijke animatie- of swipeprestaties op het fysieke Balance 2-horloge.
