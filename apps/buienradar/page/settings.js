@@ -23,40 +23,51 @@ const bg=0x07121d,white=0xf6fbff,muted=0x9bb0be,blue=0x3daee0;
 const storage=new LocalStorage();
 Page(BasePage({
  build(){
-  const make=(type,params)=>ui.createWidget(type,params);
+  const make=(type,props)=>ui.createWidget(type,props);
   const label=(x,y,w,h,value,size=23,color=white)=>
    make(ui.widget.TEXT,{x,y,w,h,text:value,text_size:size,color,
-    align_h:ui.align.CENTER_H,text_style:ui.text_style.WRAP});
-  const button=(x,y,w,h,value,click,active=false)=>
-   make(ui.widget.BUTTON,{x,y,w,h,text:value,text_size:22,color:white,
-    normal_color:active?0x176b99:0x182f3e,press_color:0x285779,
-    radius:20,click_func:click});
+    align_h:ui.align.CENTER_H,text_style:ui.text_style.ELLIPSIS});
+  const button=(x,y,w,h,value,onClick,active=false,size=21)=>
+   make(ui.widget.BUTTON,{x,y,w,h,text:value,text_size:size,color:white,
+    normal_color:active?0x276f98:0x1b3444,
+    press_color:0x2a6886,radius:21,click_func:onClick});
   make(ui.widget.FILL_RECT,{x:0,y:0,w:480,h:480,color:bg});
-  label(96,42,288,48,'INSTELLINGEN',30);
-  label(106,109,268,30,'LOCATIE',19,muted);
+  label(115,48,250,48,'INSTELLINGEN',30);
+
+  // The location selector is a self-contained, touch-friendly card.
+  make(ui.widget.FILL_RECT,{
+   x:88,y:120,w:304,h:111,color:0x102838,radius:28
+  });
+  label(126,132,228,29,'LOCATIE',19,muted);
   let selected=cities[0];
   try{
-   const l=JSON.parse(storage.getItem('buienradar.location')||'null');
-   selected=cities.find(c=>c.name===l.name)||selected;
+   const stored=JSON.parse(storage.getItem('buienradar.location')||'null');
+   selected=cities.find(c=>c.name===stored.name)||selected;
   }catch(_){}
   this.selected=cities.indexOf(selected);
-  this.place=label(125,147,230,53,selected.name,29);
-  button(71,148,52,52,'‹',()=>this.pick(-1));
-  button(357,148,52,52,'›',()=>this.pick(1));
-  make(ui.widget.FILL_RECT,{x:88,y:218,w:304,h:2,color:0x293e4b});
-  label(91,236,298,33,'REGENMELDING',20,muted);
+  this.place=label(154,170,174,49,selected.name,27,white);
+  button(103,170,47,47,'‹',()=>this.pick(-1));
+  button(331,170,47,47,'›',()=>this.pick(1));
+
+  // Alert configuration is a second card, not a wall of labels.
+  make(ui.widget.FILL_RECT,{
+   x:85,y:246,w:310,h:126,color:0x102838,radius:27
+  });
+  label(106,258,199,34,'REGENMELDING',21,white);
   let alert={enabled:false,lead:15};
   try{alert={...alert,...JSON.parse(storage.getItem('buienradar.alert')||'{}')};}catch(_){}
   this.alert=alert;
-  this.alertButton=button(135,267,210,50,alert.enabled?'AAN':'UIT',
-   ()=>this.toggleAlert(),alert.enabled);
-  this.leadText=label(133,331,214,37,alert.lead+' MIN VOORAF',22,white);
-  button(87,328,47,47,'−',()=>this.changeLead(-1));
-  button(346,328,47,47,'+',()=>this.changeLead(1));
-  // Bottom controls are inside the 480px round display (no clipped buttons).
-  button(105,373,124,44,'TEST',()=>this.testNotification());
-  button(251,373,124,44,'OPSLAAN',()=>void this.save(),true);
-  this.status=label(137,421,206,24,'',16,muted);
+  this.alertButton=button(310,252,69,45,
+   alert.enabled?'AAN':'UIT',()=>this.toggleAlert(),alert.enabled,18);
+  this.leadText=label(154,313,173,36,alert.lead+' MIN',26,white);
+  label(150,343,180,24,'VOORAF',17,muted);
+  button(105,308,46,46,'−',()=>this.changeLead(-1));
+  button(331,308,46,46,'+',()=>this.changeLead(1));
+
+  // Independent test and primary save: both fully inside circular screen.
+  button(105,386,120,43,'TEST',()=>this.testNotification(),false,19);
+  button(255,386,120,43,'OPSLAAN',()=>void this.save(),true,19);
+  this.status=label(145,431,190,26,'',16,muted);
  },
  pick(delta){
   this.selected=(this.selected+delta+cities.length)%cities.length;
@@ -65,14 +76,14 @@ Page(BasePage({
  toggleAlert(){
   this.alert.enabled=!this.alert.enabled;
   this.alertButton.setProperty(ui.prop.MORE,{
-   x:135,y:267,w:210,h:50,text:this.alert.enabled?'AAN':'UIT',
-   normal_color:this.alert.enabled?0x176b99:0x182f3e
+   x:310,y:252,w:69,h:45,text:this.alert.enabled?'AAN':'UIT',
+   normal_color:this.alert.enabled?0x276f98:0x1b3444
   });
  },
  changeLead(direction){
   const choices=[5,15,30],i=choices.indexOf(this.alert.lead);
   this.alert.lead=choices[Math.max(0,Math.min(2,i+direction))];
-  this.leadText.setProperty(ui.prop.TEXT,this.alert.lead+' MIN VOORAF');
+  this.leadText.setProperty(ui.prop.TEXT,this.alert.lead+' MIN');
  },
  testNotification(){
   try{
