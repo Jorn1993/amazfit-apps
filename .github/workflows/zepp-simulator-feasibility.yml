@@ -55,46 +55,76 @@ jobs:
           umask 077
           input_file="$(mktemp /dev/shm/zepp-credential.XXXXXXXX)"
           trap 'rm -f "$input_file"' EXIT
-          printf '%s' "$ZEPP_EMAIL" > "$input_file"
-          xdotool mousemove --sync 615 310 click 1
-          xdotool type --clearmodifiers --delay 45 --file "$input_file"
-          printf '%s' "$ZEPP_PASSWORD" > "$input_file"
-          xdotool mousemove --sync 610 381 click 1
-          xdotool type --clearmodifiers --delay 55 --file "$input_file"
-          rm -f "$input_file"
-          unset ZEPP_EMAIL ZEPP_PASSWORD
-          xdotool mousemove --sync 645 534 click 1
-          sleep 18
-          # Click Download Manager once, only if not already open.
-          scrot -z /tmp/zepp-after-login-private.png
-          python3 - <<'PY'
+          function enter_account {
+            # Zepp account popup observed at fixed positions in v2.1.2.
+            # Never pass the literal credentials as process arguments.
+            printf '%s' "$ZEPP_EMAIL" > "$input_file"
+            xdotool mousemove --sync 615 310 click 1
+            xdotool key ctrl+a
+            xdotool type --clearmodifiers --delay 45 --file "$input_file"
+            printf '%s' "$ZEPP_PASSWORD" > "$input_file"
+            xdotool mousemove --sync 610 381 click 1
+            xdotool key ctrl+a
+            xdotool type --clearmodifiers --delay 55 --file "$input_file"
+            rm -f "$input_file"
+            xdotool mousemove --sync 645 534 click 1
+            sleep 18
+          }
+          function check_screen {
+            local name="$1"
+            scrot -z "/tmp/zepp-${name}-private.png"
+            python3 - "$name" <<'PY'
+          import sys
           from PIL import Image,ImageDraw
-          im=Image.open('/tmp/zepp-after-login-private.png').convert('RGB')
+          name=sys.argv[1]
+          im=Image.open('/tmp/zepp-'+name+'-private.png').convert('RGB')
+          # Inspect this pixel BEFORE masking. White means modal login overlay.
+          p=im.getpixel((180,320))
+          logged_out=min(p)>220
           d=ImageDraw.Draw(im)
           d.rectangle((110,85,227,215),fill=(20,20,20))
           d.rectangle((463,274,817,424),fill=(20,20,20))
-          im.save('simulator-ci/01-after-login-redacted.png')
-          # When the Zepp login overlay is still present, x=180,y=320 is
-          # white; the dark sidebar in authenticated device UI is not.
-          r,g,b=im.getpixel((180,320))
-          if min(r,g,b)>220:
-            raise SystemExit('Zepp Account login screen remains; aborting before emulator clicks')
-          print('LOGIN_GATE: Login overlay dismissed (visual confirmation)')
+          im.save('simulator-ci/'+name+'-redacted.png')
+          print('ZEPP_UI_STATE:',name,'login_modal_visible='+str(logged_out).lower())
           PY
+          }
+          enter_account
+          mkdir -p simulator-ci
+          check_screen '01-after-first-login'
+          # Open the official device manager; do NOT equate a dismissed
+          # login modal with an actually authenticated Zepp session.
           xdotool mousemove --sync 1115 132 click 1
           sleep 4
-          scrot -z /tmp/zepp-after-manager-open-private.png
+          check_screen '02-after-manager-request'
+          if python3 - <<'PY'
+          from PIL import Image
+          im=Image.open('/tmp/zepp-02-after-manager-request-private.png')
+          raise SystemExit(0 if min(im.getpixel((180,320)))>220 else 1)
+          PY
+          then
+            echo 'Zepp asks for login again on opening manager; allowing one controlled retry.'
+            enter_account
+            xdotool mousemove --sync 1115 132 click 1
+            sleep 5
+            check_screen '02-after-auth-retry'
+          fi
+          unset ZEPP_EMAIL ZEPP_PASSWORD
+          rm -f "$input_file"
           python3 - <<'PY'
-          from PIL import Image,ImageDraw
-          im=Image.open('/tmp/zepp-after-manager-open-private.png').convert('RGB')
-          d=ImageDraw.Draw(im)
-          d.rectangle((110,85,227,215),fill=(20,20,20))
-          d.rectangle((463,274,817,424),fill=(20,20,20))
-          im.save('simulator-ci/02-catalogue-redacted.png')
-          p=im.getpixel((180,320))
-          if min(p)>220:
-            raise SystemExit('LOGIN_GATE: Zepp login overlay appeared after opening manager')
-          print('CATALOGUE_GATE: Not blocked by Zepp Account login overlay')
+          from PIL import Image
+          import pathlib
+          p=pathlib.Path('/tmp/zepp-02-after-auth-retry-private.png')
+          if not p.exists():
+            p=pathlib.Path('/tmp/zepp-02-after-manager-request-private.png')
+          im=Image.open(p)
+          if min(im.getpixel((180,320)))>220:
+            raise SystemExit('Zepp Account login screen still open: no confirmed authenticated session')
+          # Download catalogue itself has white central cards at x250,y320;
+          # an empty main page is dark/grey.
+          x=im.getpixel((250,320))
+          if min(x)<180:
+            raise SystemExit('Zepp download catalogue not visible after login; stop before device clicks')
+          print('AUTHENTICATED_CATALOGUE_GATE: passed')
           PY
       - name: Download Balance 2 in SAME simulator session
         shell: bash
