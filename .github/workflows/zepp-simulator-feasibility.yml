@@ -166,12 +166,20 @@ jobs:
           sleep 4
           scrot -z /tmp/zepp-manager-closed-private.png
           python3 - <<'PY'
-          from PIL import Image
-          im=Image.open('/tmp/zepp-manager-closed-private.png').convert('RGB')
-          p=im.getpixel((250,320))
-          if min(p)>230:
-            raise SystemExit('Downloaded-device catalogue remained open; refusing to click behind it')
-          print('CATALOGUE_CLOSE_GATE: manager closed')
+          from PIL import Image,ImageDraw,ImageChops
+          before=Image.open('/tmp/zepp-balance2-download-private.png').convert('RGB')
+          after=Image.open('/tmp/zepp-manager-closed-private.png').convert('RGB')
+          # Preserve evidence on failure; never expose a raw screenshot.
+          safe=after.copy();d=ImageDraw.Draw(safe)
+          d.rectangle((110,85,227,215),fill=(20,20,20))
+          d.rectangle((463,274,817,424),fill=(20,20,20))
+          safe.save('simulator-ci/05-manager-closed-redacted.png')
+          area=(250,240,1130,780)
+          diff=ImageChops.difference(before.crop(area),after.crop(area)).convert('L')
+          changed=sum(1 for v in diff.getdata() if v>40)
+          print('CATALOGUE_CLOSE_GATE: pixels changed after X click:',changed)
+          if changed<25000:
+            raise SystemExit('Catalogue may not have closed; screenshot captured for investigation')
           PY
           # Official Zepp UI: model selector at x~987,y132.
           xdotool mousemove --sync 982 133 click 1
