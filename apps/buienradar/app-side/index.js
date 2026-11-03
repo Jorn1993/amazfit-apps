@@ -6,7 +6,7 @@ const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
 const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
 // Only Buienradar's Belgian precipitation forecast: current and future,
-// no historical frames and no KMI or GitHub runtime dependency.
+// no historical frames and no third-party radar source or GitHub runtime dependency.
 const BUIENRADAR_GIF='https://image.buienradar.nl/2.0/image/animation/'+
  'RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True'+
  '&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1';
