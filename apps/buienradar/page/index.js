@@ -456,7 +456,9 @@ Page(BasePage({
     this.radarCanvasVisible=false;
     this.radarCanvas?.setProperty(ui.prop.VISIBLE,false);
    }
-   if(this.radarDisplayed&&!this.hasCurrentRadar())this.applyRadarFrame();
+   // A once-visible CANVAS has hidden the native IMG. Restore the
+   // valid current map immediately, even if it is still fresh.
+   this.applyRadarFrame();
    return;
   }
   if(this.radarPainting||this.radarCanvasFrames.length<2)return;
