@@ -160,11 +160,19 @@ jobs:
         run: |
           set -euo pipefail
           export DISPLAY=:99
-          # Previous implementation mistakenly clicked x1112,y208, in the
-          # manager CONTENT instead of its actual header close x1112,y183.
-          xdotool mousemove --sync 1112 183 click 1
+          # Confirmed from real GitHub screenshot: modal CLOSE is exactly
+          # x1112, y211. Our older y183 click never closed the catalogue.
+          xdotool mousemove --sync 1112 211 click 1
           sleep 4
           scrot -z /tmp/zepp-manager-closed-private.png
+          python3 - <<'PY'
+          from PIL import Image
+          im=Image.open('/tmp/zepp-manager-closed-private.png').convert('RGB')
+          p=im.getpixel((250,320))
+          if min(p)>230:
+            raise SystemExit('Downloaded-device catalogue remained open; refusing to click behind it')
+          print('CATALOGUE_CLOSE_GATE: manager closed')
+          PY
           # Official Zepp UI: model selector at x~987,y132.
           xdotool mousemove --sync 982 133 click 1
           sleep 4
