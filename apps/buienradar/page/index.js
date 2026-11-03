@@ -60,6 +60,7 @@ Page(BasePage({
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
   this.liveFrames=[];this.radarStamp=null;this.radarSyncing=false;
   this.radarMode='archive';this.radarError=null;
+  this.radarStage='idle';this.lastSnapshotReceiptAt=0;
   this.radarPaths=Array.from({length:6},(_,i)=>'radar-frame-'+i+'.png');
   this.frameIndex=0;this.pendingFrame=null;this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];
@@ -114,7 +115,13 @@ Page(BasePage({
    x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true
   });
   this.city=cityButton(0);
-  this.radarLabel=txt(0,145,88,190,25,'OUDE RADAR',17,C.orange);
+  // A single actionable loading/error label. Never call an old frame current.
+  this.radarLabel=create(0,ui.widget.BUTTON,{
+   x:125,y:86,w:230,h:43,text:'RADAR OPHALEN...',
+   text_size:17,color:C.white,normal_color:0x112a3c,
+   press_color:0x246586,radius:19,
+   click_func:()=>void this.requestRadar(true)
+  });
   this.updateRadarLabel();
   // The uncalibrated yellow marker is intentionally NOT drawn: Buienradar's
   // Belgium image API doesn't expose reliable map bounds/projection metadata.
@@ -226,6 +233,8 @@ Page(BasePage({
      if(snapshot){
       this.radarStamp=file.params.generatedAt;
       this.radarMode='snapshot';
+      this.lastSnapshotReceiptAt=Date.now();
+      this.radarStage='ready';
       this.radarPaths=[file.filePath];
       this.frameIndex=0;
       this.radarError=null;
@@ -244,6 +253,7 @@ Page(BasePage({
       if(contiguous.length>=2){
        this.radarPaths=contiguous;
        this.radarMode='animation';
+       this.radarStage='ready';
        this.radarError=null;
        this.saveRadarCache();
        this.updateRadarLabel();
@@ -278,16 +288,25 @@ Page(BasePage({
  isRadarFresh(){
   const stamp=Date.parse(this.radarStamp);
   return Number.isFinite(stamp)&&stamp<=Date.now()+60000&&
-   Date.now()-stamp<35*60000;
+   Date.now()-stamp<20*60000;
  },
  updateRadarLabel(){
   if(!this.radarLabel)return;
-  const recent=this.isRadarFresh();
-  const label=!recent?'VEROUDERDE RADAR':
-   this.radarMode==='snapshot'?'LOSSE OPNAME':
-   this.radarMode==='animation'?'RECENTE ANIMATIE':'VEROUDERDE RADAR';
-  this.radarLabel.setProperty(ui.prop.TEXT,label);
-  this.radarLabel.setProperty(ui.prop.COLOR,recent?C.white:C.orange);
+  const ready=this.isRadarFresh()&&
+   ['snapshot','animation'].includes(this.radarMode);
+  let text='';
+  if(!ready){
+   if(this.radarSyncing)text='RADAR OPHALEN...';
+   else if(this.radarError){
+    const code=this.radarError.includes('DOWNLOAD')?'DOWNLOAD':
+     this.radarError.includes('CONVERT')?'AFBEELDING':
+     this.radarError.includes('TRANSFER')?'OVERDRACHT':
+     this.radarError.includes('ONTVANGST')?'ONTVANGST':'VERBINDING';
+    text=code+' MISLUKT · TIK';
+   }else text='RADAR VERNIEUWEN';
+  }
+  this.radarLabel.setProperty(ui.prop.TEXT,text);
+  this.radarLabel.setProperty(ui.prop.VISIBLE,!ready);
  },
  saveRadarCache(){
   try{storage.setItem('buienradar.radar-frames.v1',JSON.stringify({
@@ -323,32 +342,43 @@ Page(BasePage({
    }
   });
  },
- async requestRadar(){
+ async requestRadar(force=false){
   if(this.disposed||this.radarSyncing)return;
+  if(!force&&this.radarMode==='snapshot'&&this.isRadarFresh())return;
   this.radarSyncing=true;
+  this.radarError=null;
+  this.radarStage='starting';
+  this.updateRadarLabel();
+  const previousReceipt=this.lastSnapshotReceiptAt;
   try{
-   let manifest=null,fresh=false;
-   try{
-    manifest=await this.phone({method:'radar.manifest'},15000);
-    const stamp=Date.parse(manifest&&manifest.generatedAt);
-    fresh=!!(manifest&&manifest.ok===true&&manifest.frameCount>=3&&
-      Number.isFinite(stamp)&&stamp<=Date.now()+60000&&
-      Date.now()-stamp<35*60000);
-   }catch(_){}
-   if(fresh){
-    if(manifest.generatedAt===this.radarStamp&&
-       this.radarMode==='animation'&&this.radarPaths.length>=3)return;
-    this.radarStamp=manifest.generatedAt;
-    this.liveFrames=new Array(manifest.frameCount).fill(null);
-    for(let i=0;i<manifest.frameCount&&!this.disposed;i++){
-     try{await this.downloadSingleFrame(i);}catch(_){break;}
+   // No GitHub, no manifest. The phone downloads a Buienradar PNG directly,
+   // converts it, and sends it over Bluetooth to the watch.
+   const result=await this.phone({method:'radar.snapshot'},15000);
+   if(!result||(!result.ok&&!result.busy))
+    throw Error(result&&result.error||'DOWNLOAD: geen verbinding');
+   const deadline=Date.now()+65000;
+   while(!this.disposed&&Date.now()<deadline){
+    if(this.lastSnapshotReceiptAt>previousReceipt&&
+       this.radarMode==='snapshot'&&this.isRadarFresh()){
+     this.radarStage='ready';
+     return;
     }
-    if(this.radarMode==='animation'&&this.isRadarFresh())return;
+    const progress=await this.phone({method:'radar.status'},8000);
+    if(progress&&progress.stage){
+     this.radarStage=progress.stage;
+     if(progress.stage==='failed')
+      throw Error(progress.error||'DOWNLOAD: mislukt');
+     this.updateRadarLabel();
+    }
+    await new Promise(resolve=>setTimeout(resolve,1800));
    }
-   const result=await this.phone({method:'radar.snapshot'},12000);
-   if(!result||result.ok!==true)throw Error('Nieuwe opname niet beschikbaar');
-  }catch(e){this.radarError=String(e&&e.message||e);}
-  finally{this.radarSyncing=false;this.updateRadarLabel();}
+   if(!this.disposed)throw Error('ONTVANGST: geen bruikbare radar ontvangen');
+  }catch(e){
+   if(!this.disposed)this.radarError=String(e&&e.message||e);
+  }finally{
+   this.radarSyncing=false;
+   this.updateRadarLabel();
+  }
  },
  draw(){
   if(this.disposed)return;
