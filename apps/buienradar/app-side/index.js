@@ -8,11 +8,12 @@ const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
 const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
 // Direct single-frame Buienradar images downloaded by the Zepp phone service.
 // A single PNG is essential; Zepp's image converter cannot decode animated GIFs.
-// The last endpoint is the documented "extension=png" backup.
+// Both single-image endpoints were verified live as genuine 320x320 PNGs.
+// The documented animation endpoint returns an animated GIF even with
+// extension=png, which the Zepp phone converter cannot decode.
 const RADAR_DIRECT_SOURCES=[
  'https://image.buienradar.nl/2.0/image/single/RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True&renderBranding=False&renderText=True',
- 'https://image.buienradar.nl/2.0/image/single/RadarMapRainBE?height=320&width=320&renderBackground=True&renderBranding=False&renderText=True',
- 'https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE?height=320&width=320&extension=png&renderBackground=True&renderBranding=False&renderText=True'
+ 'https://image.buienradar.nl/2.0/image/single/RadarMapRainBE?height=320&width=320&renderBackground=True&renderBranding=False&renderText=True'
 ];
 let rainCache=null,weatherCache=null;
 function responseBody(result){
