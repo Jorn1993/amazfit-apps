@@ -11,12 +11,12 @@ permissions:
 jobs:
   simulator-linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 16
     steps:
       - name: Install Linux GUI test prerequisites
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb xauth x11-apps scrot xdotool python3-pil libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0 curl
+          sudo apt-get install -y -qq xvfb xauth x11-apps scrot xdotool python3-pil wmctrl libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0 curl
       - name: Download official Zepp Simulator 2.1.2 Linux amd64
         run: |
           curl --fail --location --retry 2 --max-time 180 \
@@ -38,85 +38,153 @@ jobs:
           sleep 10
           xdotool mousemove --sync 1115 132 click 1
           sleep 3
-      - name: Authenticate Zepp account from repository secrets
+      - name: Authenticate Zepp (secrets never logged) and verify the catalogue opens
         env:
           ZEPP_EMAIL: ${{ secrets.ZEPP_ACCOUNT_EMAIL }}
           ZEPP_PASSWORD: ${{ secrets.ZEPP_ACCOUNT_PASSWORD }}
+        shell: bash
         run: |
           set +x
-          if [ -z "$ZEPP_EMAIL" ] || [ -z "$ZEPP_PASSWORD" ]; then
-            echo 'Missing Zepp account Actions secrets; skipping login.'
-            exit 1
-          fi
+          set -euo pipefail
+          mkdir -p simulator-ci
           export DISPLAY=:99
+          if [ -z "$ZEPP_EMAIL" ] || [ -z "$ZEPP_PASSWORD" ]; then
+            echo '::error::Missing ZEPP_ACCOUNT_EMAIL / ZEPP_ACCOUNT_PASSWORD secrets'
+            exit 2
+          fi
           umask 077
-          input_file="$(mktemp /dev/shm/zepp-login.XXXXXXXX)"
+          input_file="$(mktemp /dev/shm/zepp-credential.XXXXXXXX)"
           trap 'rm -f "$input_file"' EXIT
-          # Temporary memory-backed file keeps secrets out of process arguments.
           printf '%s' "$ZEPP_EMAIL" > "$input_file"
           xdotool mousemove --sync 615 310 click 1
-          xdotool type --clearmodifiers --delay 40 --file "$input_file"
+          xdotool type --clearmodifiers --delay 45 --file "$input_file"
           printf '%s' "$ZEPP_PASSWORD" > "$input_file"
           xdotool mousemove --sync 610 381 click 1
-          xdotool type --clearmodifiers --delay 50 --file "$input_file"
+          xdotool type --clearmodifiers --delay 55 --file "$input_file"
           rm -f "$input_file"
           unset ZEPP_EMAIL ZEPP_PASSWORD
           xdotool mousemove --sync 645 534 click 1
-          sleep 14
-          xdotool mousemove --sync 1115 132 click 1 || true
-          sleep 5
-          # A green GH job must not be mistaken for a successful login.
-          # In the real Zepp login overlay, pixel 180,320 is bright white;
-          # after login the dark app sidebar occupies that same pixel.
-          scrot -z /tmp/zepp-auth-check.png
-          python3 - <<'PY'
-          from PIL import Image
-          im=Image.open('/tmp/zepp-auth-check.png').convert('RGB')
-          r,g,b=im.getpixel((180,320))
-          if min(r,g,b)>220:
-              raise SystemExit('Zepp login screen is still open; device download/launch NOT verified')
-          print('Zepp login overlay dismissed; emulator catalogue can be inspected')
-          PY
-          # Exact model and position verified in prior redacted screenshots:
-          # Balance2, latest v1.1.0, OS 5.0, API 4.2.
-          mkdir -p simulator-ci
-          xdotool mousemove --sync 990 650 click --repeat 6 --delay 90 5
-          sleep 3
-          xdotool mousemove --sync 1097 596 click 1
-          sleep 25
-          scrot -z /tmp/balance2-downloaded.png
-          # Close catalogue and select downloaded model in simulator toolbar.
-          xdotool mousemove --sync 1112 208 click 1
-          sleep 3
-          scrot -z /tmp/balance2-main-window.png
-          xdotool mousemove --sync 986 134 click 1
-          sleep 3
-          scrot -z /tmp/balance2-device-menu.png
-          xdotool type --clearmodifiers --delay 45 'Balance2'
-          xdotool key Return
-          sleep 3
-          scrot -z /tmp/balance2-device-selected.png
-          xdotool mousemove --sync 270 132 click 1
-          sleep 28
-          scrot -z /tmp/balance2-device-launch.png
-          # Only the screenshots with sensitive regions masked are uploaded.
+          sleep 18
+          # Click Download Manager once, only if not already open.
+          scrot -z /tmp/zepp-after-login-private.png
           python3 - <<'PY'
           from PIL import Image,ImageDraw
-          names=('downloaded','main-window','device-menu','device-selected','device-launch')
-          for name in names:
-              im=Image.open('/tmp/balance2-'+name+'.png').convert('RGB')
-              d=ImageDraw.Draw(im)
-              d.rectangle((0,0,1280,90),fill=(15,15,15))
-              d.rectangle((115,90,225,195),fill=(15,15,15))
-              # Mask login form if the account session was not established.
-              d.rectangle((468,281,812,416),fill=(15,15,15))
-              im.save('simulator-ci/balance2-'+name+'-redacted.png')
+          im=Image.open('/tmp/zepp-after-login-private.png').convert('RGB')
+          d=ImageDraw.Draw(im)
+          d.rectangle((110,85,227,215),fill=(20,20,20))
+          d.rectangle((463,274,817,424),fill=(20,20,20))
+          im.save('simulator-ci/01-after-login-redacted.png')
+          # When the Zepp login overlay is still present, x=180,y=320 is
+          # white; the dark sidebar in authenticated device UI is not.
+          r,g,b=im.getpixel((180,320))
+          if min(r,g,b)>220:
+            raise SystemExit('Zepp Account login screen remains; aborting before emulator clicks')
+          print('LOGIN_GATE: Login overlay dismissed (visual confirmation)')
           PY
-          test -s simulator-ci/balance2-device-launch-redacted.png
-      - name: Upload redacted simulator status (no session data)
+          xdotool mousemove --sync 1115 132 click 1
+          sleep 4
+          scrot -z /tmp/zepp-after-manager-open-private.png
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw
+          im=Image.open('/tmp/zepp-after-manager-open-private.png').convert('RGB')
+          d=ImageDraw.Draw(im)
+          d.rectangle((110,85,227,215),fill=(20,20,20))
+          d.rectangle((463,274,817,424),fill=(20,20,20))
+          im.save('simulator-ci/02-catalogue-redacted.png')
+          p=im.getpixel((180,320))
+          if min(p)>220:
+            raise SystemExit('LOGIN_GATE: Zepp login overlay appeared after opening manager')
+          print('CATALOGUE_GATE: Not blocked by Zepp Account login overlay')
+          PY
+      - name: Download Balance 2 in SAME simulator session
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          # Six mouse-wheel steps were verified from the prior
+          # model-list screenshot to bring Balance2 to row y=596.
+          xdotool mousemove --sync 990 650 click --repeat 6 --delay 90 5
+          sleep 3
+          scrot -z /tmp/zepp-balance2-model-private.png
+          du -sk "$HOME/.zepp" | awk '{print "Simulator user state size before download (KiB): " $1}' || true
+          # Balance2 v1.1.0 download icon at x=1097, y=596.
+          xdotool mousemove --sync 1097 596 click 1
+          sleep 105
+          scrot -z /tmp/zepp-balance2-download-private.png
+          du -sk "$HOME/.zepp" | awk '{print "Simulator user state size after download (KiB): " $1}' || true
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw
+          for src,out in [('model','03-model-selected'),('download','04-downloaded')]:
+            im=Image.open('/tmp/zepp-balance2-'+src+'-private.png').convert('RGB')
+            d=ImageDraw.Draw(im)
+            d.rectangle((110,85,227,215),fill=(20,20,20))
+            d.rectangle((463,274,817,424),fill=(20,20,20))
+            im.save('simulator-ci/'+out+'-redacted.png')
+            p=im.getpixel((180,320))
+            if min(p)>220:
+              raise SystemExit('Zepp login overlay appeared during model '+src+'; download not verified')
+          print('DOWNLOAD_STAGE: Awaiting visual confirmation of Balance2 downloaded row')
+          PY
+      - name: Close device download manager and open Balance 2 selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          # Previous implementation mistakenly clicked x1112,y208, in the
+          # manager CONTENT instead of its actual header close x1112,y183.
+          xdotool mousemove --sync 1112 183 click 1
+          sleep 4
+          scrot -z /tmp/zepp-manager-closed-private.png
+          # Official Zepp UI: model selector at x~987,y132.
+          xdotool mousemove --sync 982 133 click 1
+          sleep 4
+          scrot -z /tmp/zepp-watch-selector-private.png
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw
+          for src,out in [('manager-closed','05-manager-closed'),
+                          ('watch-selector','06-model-selector')]:
+            im=Image.open('/tmp/zepp-'+src+'-private.png').convert('RGB')
+            d=ImageDraw.Draw(im)
+            d.rectangle((110,85,227,215),fill=(20,20,20))
+            d.rectangle((463,274,817,424),fill=(20,20,20))
+            im.save('simulator-ci/'+out+'-redacted.png')
+            if min(im.getpixel((180,320)))>220:
+              raise SystemExit('Login overlay is visible; aborting emulator launch')
+          print('SELECTOR_STAGE: screenshots saved for exact Balance2 selection')
+          PY
+      - name: Select downloaded model and launch virtual watch
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          # Only Balance2 should be downloaded: select first available
+          # in Zepp's device selector with keyboard Down and Return.
+          xdotool key Down Return
+          sleep 3
+          scrot -z /tmp/zepp-watch-selected-private.png
+          before="$(xdotool search --onlyvisible --name 'Simulator|Balance|QEMU' | wc -l || true)"
+          xdotool mousemove --sync 270 132 click 1
+          sleep 35
+          scrot -z /tmp/zepp-watch-launched-private.png
+          after="$(xdotool search --onlyvisible --name 'Simulator|Balance|QEMU' | wc -l || true)"
+          echo "Visible simulator-related window count: before=$before after=$after"
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw
+          for src,out in [('selected','07-model-selected'),
+                          ('launched','08-virtual-watch')]:
+            im=Image.open('/tmp/zepp-watch-'+src+'-private.png').convert('RGB')
+            d=ImageDraw.Draw(im)
+            d.rectangle((110,85,227,215),fill=(20,20,20))
+            d.rectangle((463,274,817,424),fill=(20,20,20))
+            im.save('simulator-ci/'+out+'-redacted.png')
+            if min(im.getpixel((180,320)))>220:
+              raise SystemExit('Zepp Account login overlay still visible; watch NOT launched')
+          print('WATCH_STAGE: verify that the real watch emulator window appeared')
+          PY
+      - name: Upload evidence without login fields, tokens or developer files
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zepp-balance2-device-launch
-          path: simulator-ci/balance2-*-redacted.png
+          name: zepp-balance2-one-run-evidence
+          path: simulator-ci/*-redacted.png
           if-no-files-found: warn
