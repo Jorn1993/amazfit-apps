@@ -108,7 +108,7 @@ function downloadBuienradar(context,uri,path){
   }catch(e){reject(e);}
  }),52000,'DOWNLOAD');
 }
-function sendRadar(context,path,params){
+function sendRadar(context,path,params,timeout=65000){
  return limited(new Promise((resolve,reject)=>{
   try{
    const task=context.sendFile(path,params);
@@ -125,7 +125,7 @@ function sendRadar(context,path,params){
    task.on('change',event=>update(event?.data?.readyState||task.readyState));
    update(task.readyState);
   }catch(e){reject(e);}
- }),65000,'BLUETOOTH');
+ }),timeout,'BLUETOOTH');
 }
 async function deliverCurrent(context,generation){
  let sentCurrent=false;
@@ -166,7 +166,7 @@ async function deliverCurrent(context,generation){
   await sendRadar(context,gifPath,{
    kind:'buienradar-forecast-gif',source:'Buienradar',
    fetchedAt:Date.now(),requestedHorizonMinutes:180,generation
-  });
+  },165000);
   radarProgress('transferred');
  }catch(e){
   const error=String(e?.message||e).slice(0,125);
