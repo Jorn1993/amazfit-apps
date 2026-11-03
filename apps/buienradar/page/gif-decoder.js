@@ -124,9 +124,32 @@ export class BuienradarGif{
    if(!w||!h||x+w>this.width||y+h>this.height)fail('frame buiten kaart');
    const palette=packed&0x80?r.table(1<<((packed&7)+1)):this.global;
    if(!palette)fail('kleuren ontbreken');
-   const codes=lzw(r.blocks(),r.byte?.name==='unreachable'?0:0,w*h);
-   // Replaced below with correct stream ordering.
-   return {x,y,w,h,packed,palette,codes};
+   const min=r.byte(),codes=lzw(r.blocks(),min,w*h);
+   const gce=this.gce;
+   const snapshot=gce.disposal===3?this.pixels.slice():null;
+   let row=0;
+   const drawRow=(destY)=>{
+    for(let col=0;col<w;col++){
+     const index=codes[row*w+col];
+     if(index===gce.transparent)continue;
+     const color=index*3;
+     if(color+2>=palette.length)fail('paletteindex onjuist');
+     const dest=((y+destY)*this.width+x+col)*3;
+     this.pixels[dest]=palette[color];
+     this.pixels[dest+1]=palette[color+1];
+     this.pixels[dest+2]=palette[color+2];
+    }
+    row++;
+   };
+   if(packed&0x40){
+    for(const [start,step] of [[0,8],[4,8],[2,4],[1,2]])
+     for(let destY=start;destY<h;destY+=step)drawRow(destY);
+   }else for(let destY=0;destY<h;destY++)drawRow(destY);
+   this.prior={x,y,w,h,disposal:gce.disposal,snapshot};
+   this.gce={transparent:-1,disposal:0,delay:1000};
+   if(++this.count>24)fail('te veel frames');
+   return {width:this.width,height:this.height,
+    rgb:this.pixels.slice(),delay:gce.delay};
   }
  }
 }
