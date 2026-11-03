@@ -401,6 +401,7 @@ Page(BasePage({
      offset=end;
      if(offset<rects.length){setTimeout(batch,15);return;}
      this.radarPainting=false;this.radarCanvasVisible=true;
+     this.radarSyncing=false;this.radarError=null;
      this.radarFrameIndex=nextIndex;
      this.radarCanvas.setProperty(ui.prop.VISIBLE,true);
      this.radarWidget.setProperty(ui.prop.VISIBLE,false);
@@ -480,17 +481,23 @@ Page(BasePage({
    const result=await this.phone({method:'radar.status'},9000);
    if(!result?.ok)throw Error(result?.error||'Radarstatus niet bereikbaar');
    this.radarStage=result.stage||this.radarStage;
-   if(result.stage==='failed')
+   if(result.stage==='failed'&&!this.hasCurrentRadar())
     throw Error(result.error||'Buienradar ophalen mislukt');
-   if(this.hasCurrentRadar()){
+   if(result.stage==='current-only'){
+    this.radarDecodeError='ANIMATIE: '+String(result.gifError||'niet beschikbaar');
+    this.radarSyncing=false;this.updateRadarLabel();return;
+   }
+   if(this.hasForecastRadar()){
     this.radarSyncing=false;this.radarError=null;
     this.updateRadarLabel();return;
    }
    const elapsed=Date.now()-this.radarRequestAt;
-   if(result.stage==='transferred'&&elapsed>15000)
-    throw Error('BLUETOOTH: afbeelding niet aangekomen');
-   if(elapsed>75000)
-    throw Error('RADAR: te lang geen actueel beeld');
+   if(elapsed>105000){
+    if(!this.hasCurrentRadar())
+     throw Error('RADAR: te lang geen recent beeld');
+    this.radarDecodeError='ANIMATIE: niet ontvangen of verwerkt';
+    this.radarSyncing=false;
+   }
    this.updateRadarLabel();
   }catch(e){
    this.radarError=String(e?.message||e);
@@ -628,10 +635,20 @@ Page(BasePage({
   const steps=[1,1.25,1.5,1.85];
   const current=steps.indexOf(this.zoom||1);
   this.zoom=steps[Math.max(0,Math.min(steps.length-1,current+direction))];
-  this.applyRadarFrame();
+  if(this.hasForecastRadar()&&!this.radarPainting){
+   const f=this.radarCanvasFrames[this.radarFrameIndex];
+   if(f)void this.paintRadarRects(radarDeltaRects(f.pixels,null,
+    f.width,f.height),true,this.radarFrameIndex);
+  }else this.applyRadarFrame();
  },
  applyRadarFrame(){
   if(!this.radarBase||!this.radarWidget)return;
+  if(this.hasForecastRadar()){
+   this.radarWidget.setProperty(ui.prop.VISIBLE,false);
+   this.updateRadarLabel();return;
+  }
+  this.radarCanvasVisible=false;
+  this.radarCanvas?.setProperty(ui.prop.VISIBLE,false);
   const factor=this.zoom||1,dim=Math.round(SIZE*factor);
   const current=this.hasCurrentRadar();
   this.radarDisplayed=current;
@@ -729,6 +746,9 @@ Page(BasePage({
   if(this.weatherTimer!==undefined)clearInterval(this.weatherTimer);
   if(this.radarTimer!==undefined)clearInterval(this.radarTimer);
   this.radarEpoch++;
+  this.radarAnimationEpoch++;
+  this.radarPaintEpoch++;
   this.incomingRadarFiles={};
+  this.radarCanvasFrames=[];
  }
 }));
