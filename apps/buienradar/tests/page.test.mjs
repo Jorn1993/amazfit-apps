@@ -67,7 +67,12 @@ function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
    sessionId:'gif-1',filePath:'data://download/radar.gif',readyState:'transferred'};
   callbacks.NEWFILE();
  };
- return {page,requests,cache,receive,swipe:()=>swipe,savedFiles,
+ const receiveCurrent=(fetchedAt=Date.now())=>{
+  transferFile={params:{kind:'buienradar-current-frame',source:'Buienradar',fetchedAt},
+   sessionId:'current-1',filePath:'data://download/current.img',readyState:'transferred'};
+  callbacks.NEWFILE();
+ };
+ return {page,requests,cache,receive,receiveCurrent,swipe:()=>swipe,savedFiles,
   stopped:()=>stopped,crown:()=>crown,setUiPage:v=>uiPage=v};
 }
 const flush=async()=>{for(let i=0;i<100;i++)await Promise.resolve();};
@@ -85,7 +90,7 @@ test('App starts with a neutral surface and never renders a KMI map',async()=>{
  const t=launch();t.page.build();await flush();
  assert.equal(t.page.radarBase.type,3);
  assert.equal(t.page.radarWidget.values.visible,false);
- assert.equal(t.page.radarTime.values.text,'BUIENRADAR · +3U');
+ assert.equal(t.page.radarTime.values.text,'BUIENRADAR · RADAR');
  assert.ok(!t.requests.some(x=>x.method==='radar.forecast'||x.method==='radar.frame'));
  t.page.onDestroy();
 });
@@ -126,5 +131,46 @@ test('Offline errors remain visible instead of falsely showing a forecast',async
  assert.equal(t.page.radarWidget.values.visible,false);
  assert.match(t.page.radarError,/offline/);
  assert.match(t.page.rainDetail.values.text,/offline/);
+ t.page.onDestroy();
+});
+
+test('Full 480x480 radar, not a 320x320 inset',async()=>{
+ const t=launch();t.page.build();await flush();
+ assert.equal(t.page.radarBase.values.w,480);
+ assert.equal(t.page.radarBase.values.h,480);
+ assert.equal(t.page.radarWidget.values.w,480);
+ assert.equal(t.page.radarWidget.values.h,480);
+ t.receiveCurrent();await flush();
+ assert.equal(t.page.radarWidget.values.src,'data://download/current.img');
+ assert.equal(t.page.radarWidget.values.visible,true);
+ assert.equal(t.page.radarWidget.values.x,0);
+ assert.equal(t.page.radarWidget.values.y,0);
+ assert.equal(t.page.radarTime.values.text,'BUIENRADAR · ACTUEEL');
+ assert.equal(t.page.radarLabel.values.y,357);
+ t.page.onDestroy();
+});
+test('Current Buienradar image remains on screen when animated GIF has not arrived',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receiveCurrent();await flush();
+ assert.ok(t.page.radarSyncing);
+ assert.equal(t.page.radarWidget.values.src,'data://download/current.img');
+ assert.equal(JSON.parse(t.cache.get('buienradar.current.v1')).source,'Buienradar');
+ t.page.onDestroy();
+});
+test('Animated future frames replace the current observation when decoded',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receiveCurrent();await flush();
+ t.receive();await flush();
+ assert.equal(t.page.radarFrames.length,3);
+ assert.equal(t.page.radarTime.values.text,'BUIENRADAR · +3U');
+ assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[0].path);
+ assert.equal(t.page.radarWidget.values.w,480);
+ assert.equal(t.page.radarWidget.values.h,480);
+ t.page.onDestroy();
+});
+test('Expired current radar is never reused as up-to-date forecast',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receiveCurrent(Date.now()-3600000);await flush();
+ assert.equal(t.page.radarWidget.values.visible,false);
  t.page.onDestroy();
 });
