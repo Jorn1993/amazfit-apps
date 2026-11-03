@@ -5,11 +5,11 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.9.4",
-      "code": 16
+      "name": "0.9.5",
+      "code": 17
     },
     "vender": "Personal prototype",
-    "description": "Direct official Buienradar radar snapshot fallback without Github; freshness status for radar and widget",
+    "description": "Direct Buienradar image loading with verified BLE confirmation, retry and diagnostic error stages",
     "icon": "icon.png"
   },
   "permissions": [

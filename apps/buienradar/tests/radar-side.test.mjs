@@ -98,7 +98,7 @@ test('Current official PNG snapshot downloads and transfers without GitHub cache
   const result=await sim.call('radar.snapshot');
   assert.equal(result.ok,true);
   await settle();
-  assert.match(sim.getUrl(),/image\.buienradar\.nl\/2\.0\/image\/animation\//);
+  assert.match(sim.getUrl(),/image\.buienradar\.nl\/2\.0\/image\/single\//);
   assert.equal((await sim.call('radar.status')).stage,'transferred');
   assert.equal(sim.count(),1);
  }finally{sim.cleanup();}

@@ -79,7 +79,7 @@ test('Three native pages use horizontal swiping; all have a location entry',asyn
  assert.equal(t.page.pageViews.length,3);
  for(let i=0;i<3;i++){
   const b=t.page.parts[i].filter(w=>w.type===2);
-  assert.equal(b.length,i===1?3:1);
+  assert.equal(b.length,i===1?3:i===0?2:1);
   safe(t.page.cityLabels[i].values);
  }
  t.page.onDestroy();assert.equal(t.getStopped(),3);
@@ -89,7 +89,7 @@ test('Radar fills face and hides bogus marker and on-map zoom buttons',async()=>
  assert.equal(t.page.radarWidget.values.w,480);
  assert.equal(t.page.radarWidget.values.h,480);
  assert.equal(t.page.markerPieces,undefined);
- assert.equal(t.page.parts[0].filter(w=>w.type===2).length,1);
+ assert.equal(t.page.parts[0].filter(w=>w.type===2).length,2);
  t.page.changeZoom(1);
  assert.ok(t.page.zoom>1);
  // Never animate the bundled old frames as if they were current.
@@ -150,7 +150,7 @@ test('Stale scheduled animation triggers direct official phone radar snapshot',a
  assert.ok(t.requests.some(req=>req.method==='radar.snapshot'),
   'Official direct PNG fallback should run if scheduled GIF cache is outdated');
  assert.equal(t.page.radarMode,'archive');
- assert.equal(t.page.radarLabel.values.text,'VEROUDERDE RADAR');
+ assert.equal(t.page.radarLabel.values.text,'RADAR OPHALEN...');
  t.page.onDestroy();
 });
 test('Direct snapshot over BLE replaces outdated loop with a fresh single frame',async()=>{
@@ -159,9 +159,21 @@ test('Direct snapshot over BLE replaces outdated loop with a fresh single frame'
  t.receive(0,'buienradar-snapshot',stamp);
  assert.equal(t.page.radarMode,'snapshot');
  assert.equal(t.page.radarPaths.length,1);
- assert.equal(t.page.radarLabel.values.text,'LOSSE OPNAME');
+ assert.equal(t.page.radarLabel.values.text,'');
+ assert.equal(t.page.radarLabel.values.visible,false);
  assert.equal(JSON.parse(t.cache.get('buienradar.radar-frames.v1')).mode,'snapshot');
  t.page.nextRadarFrame();
  assert.equal(t.page.frameIndex,0,'single snapshot never pretends to animate');
+ t.page.onDestroy();
+});
+
+test('Radar retry button exists and does not misrepresent old pictures as current',async()=>{
+ const t=launch();t.page.build();await flush();
+ assert.equal(typeof t.page.radarLabel.values.click_func,'function');
+ assert.equal(t.page.radarMode,'archive');
+ assert.ok(t.page.radarLabel.values.text.includes('OPHALEN'));
+ t.page.radarError='DOWNLOAD: offline';t.page.radarSyncing=false;
+ t.page.updateRadarLabel();
+ assert.match(t.page.radarLabel.values.text,/DOWNLOAD MISLUKT/);
  t.page.onDestroy();
 });
