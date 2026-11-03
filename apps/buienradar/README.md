@@ -1,6 +1,6 @@
 # Buienradar · Amazfit Balance 2
 
-**Release 0.9.3 · Zepp OS 3 · privéprototype**
+**Release 0.9.4 · Zepp OS 3 · privéprototype**
 
 ## Ontwerp (alle schermen als één systeem)
 
@@ -57,3 +57,17 @@ Na de groene CI-build:
 - [Versieoverzicht](public/latest.json)
 
 Nieuwe sideloaded developer-appversies moeten opnieuw met de QR worden geïnstalleerd.
+
+## Radar zonder GitHub — v0.9.4
+
+De **regenverwachting en actuele weerdata** worden rechtstreeks door de Zepp Side Service op je telefoon bij Buienradar opgehaald. De **radar heeft nu twee routes**:
+
+1. **Animatie (optioneel):** een 6-frame GIF die GitHub Actions omzet in PNG's. Deze cache kan verouderen wanneer GitHub de geplande workflow overslaat. De app weigert deze reeks als recent wanneer de manifestdatum meer dan 35 minuten oud is.
+2. **Rechtstreekse opname (fallback):** de Side Service haalt een PNG bij Buienradar via de gedocumenteerde Belgische afbeeldings-API, zet die met Zepp \`image.convert\` om en verstuurt ze via BLE. Hiervoor is **geen GitHub nodig**. De app probeert deze route zelfstandig op te starten en daarna iedere vijf minuten zolang ze open is. De opname is **niet geanimeerd** en de ophaaltijd is niet noodzakelijk identiek aan de radarwaarnemingstijd.
+
+Oude meegeleverde beelden worden niet meer als live geanimeerd; het horloge toont dan *VEROUDERDE RADAR*. Bij een directe statische afbeelding verschijnt *LOSSE OPNAME*. De widget probeert de laatst succesvol ontvangen afbeelding te gebruiken en toont anders *RADARARCHIEF*.
+
+**Beperkingen:** de daadwerkelijke HTTP-respons van Buienradar, PNG-conversie en aflevering op de Balance 2 kunnen niet volledig worden geverifieerd met GitHub-unit-tests. Controle op fysieke hardware is noodzakelijk. Rechtstreekse **volledige animatie** zonder een decoder / andere framebron is nog niet geïmplementeerd. Voor nieuwe appversies (ZPK) blijft GitHub het ontwikkel- en installatiekanaal.
+
+Bron: https://www.buienradar.be/overbuienradar/weerdata-op-uw-website
+
