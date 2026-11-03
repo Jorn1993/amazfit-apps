@@ -164,7 +164,9 @@ async function deliverBuienradarGif(generation){
    throw Error('GIF: Zepp-bestandssysteem niet beschikbaar');
   radarProgress('gif-read');
   const source=await limited(fs.readFile(path),20000,'GIF READ');
-  const bytes=source?.data??source?.buffer??source;
+  // Preserve Uint8Array byteOffset; taking .buffer alone can include
+  // unrelated preceding bytes in a pooled phone-side buffer.
+  const bytes=source?.data??source;
   if(!bytes||(typeof bytes!=='object'))
    throw Error('GIF: geen binaire data uit telefoonopslag');
   const gif=new BuienradarGif(bytes);
