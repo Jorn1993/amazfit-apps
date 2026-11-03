@@ -125,10 +125,3 @@ test('The rain-alert service has no invalid notification action pointing to a pa
 });
 
 
-test('On-watch GIF probe reports phone-side compatibility truthfully',async()=>{
- const t=settings();
- t.page.request=async r=>({ok:false,error:'GIF-CONVERT: unsupported'});
- await t.page.testGif();
- assert.equal(t.page.gifTestButton.values.text,'GIF fout');
- assert.match(t.page.gifResult.values.text,/unsupported/);
-});

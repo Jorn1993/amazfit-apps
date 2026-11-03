@@ -34,7 +34,7 @@ jobs:
         run: |
           node --check apps/buienradar/page/index.js
           node --check apps/buienradar/app-side/index.js
-          node --check apps/buienradar/app-side/future-radar.js
+          node --check apps/buienradar/page/gif-decoder.js
           node --check apps/buienradar/app-side/rain.js
           node --check apps/buienradar/app-side/weather.js
           node --check apps/buienradar/secondary-widget/index.js
@@ -42,12 +42,10 @@ jobs:
           node --check apps/buienradar/page/locations.js
           node --check apps/buienradar/app-service/rain-alert.js
           node --test apps/buienradar/tests/*.test.mjs
-      - name: Bundle static Belgium map and build Zepp mini program
+      - name: Generate Buienradar assets and build native Zepp app
         run: |
-          python -m pip install --quiet requests pillow
-          python apps/buienradar/tools/bundle_forecast_map.py
-          # Never package obsolete historical radar frames from older builds.
-          find apps/buienradar/assets -name 'radar-frame-*.png' -delete
+          python -m pip install --quiet pillow
+          # Genuine animated Buienradar GIF arrives directly at runtime.
           node apps/buienradar/prepare-assets.mjs
           python apps/buienradar/tools/generate_branding.py
           (cd apps/buienradar && ../../zeus-cli/node_modules/.bin/zeus build)

@@ -17,8 +17,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Offline decoder tests
-        run: node --test apps/buienradar/tests/native-gif.test.mjs
+      - name: Check source and run complete test suite
+        run: |
+          node --check apps/buienradar/page/index.js
+          node --check apps/buienradar/app-side/index.js
+          node --check apps/buienradar/page/gif-decoder.js
+          node --check apps/buienradar/secondary-widget/index.js
+          node --test apps/buienradar/tests/*.test.mjs
       - name: Get live official Buienradar Belgium forecast GIF
         run: |
           curl -fL --max-time 35 --retry 2 -o /tmp/buienradar-live.gif 'https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1'
