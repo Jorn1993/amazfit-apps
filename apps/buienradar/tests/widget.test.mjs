@@ -32,6 +32,8 @@ test('Widget shows real, recent Buienradar forecast frame',()=>{
  const t=launch({source:'Buienradar',horizonMinutes:180,fetchedAt:Date.now(),
   frames:[{path:'data://fresh.png'},{path:'data://future.png'}]});
  assert.equal(t.component.rainLayer.props.src,'data://fresh.png');
+ assert.equal(t.component.rainLayer.props.w,480);
+ assert.equal(t.component.rainLayer.props.h,480);
  assert.equal(t.component.rainLayer.props.visible,true);
  assert.equal(t.component.timeLabel.props.text,'Buienradar +3u');
 });
@@ -49,4 +51,25 @@ test('Widget refreshes after returning from main app',()=>{
  t.component.onResume();
  assert.equal(t.component.rainLayer.props.src,'data://new.png');
  assert.equal(t.component.rainLayer.props.visible,true);
+});
+
+test('Widget uses fresh official current radar when no forecast is ready',()=>{
+ const t=launch();
+ t.cache.set('buienradar.current.v1',JSON.stringify({
+  source:'Buienradar',fetchedAt:Date.now(),path:'data://current.img'
+ }));
+ t.component.onResume();
+ assert.equal(t.component.rainLayer.props.src,'data://current.img');
+ assert.equal(t.component.rainLayer.props.visible,true);
+ assert.equal(t.component.timeLabel.props.text,'Buienradar · actueel');
+ assert.equal(t.component.rainLayer.props.w,480);
+ assert.equal(t.component.rainLayer.props.h,480);
+});
+test('Widget never shows stale current radar',()=>{
+ const t=launch();
+ t.cache.set('buienradar.current.v1',JSON.stringify({
+  source:'Buienradar',fetchedAt:Date.now()-3600000,path:'data://old.img'
+ }));
+ t.component.onResume();
+ assert.equal(t.component.rainLayer.props.visible,false);
 });
