@@ -65,6 +65,18 @@ jobs:
           sleep 14
           xdotool mousemove --sync 1115 132 click 1 || true
           sleep 5
+          # A green GH job must not be mistaken for a successful login.
+          # In the real Zepp login overlay, pixel 180,320 is bright white;
+          # after login the dark app sidebar occupies that same pixel.
+          scrot -z /tmp/zepp-auth-check.png
+          python3 - <<'PY'
+          from PIL import Image
+          im=Image.open('/tmp/zepp-auth-check.png').convert('RGB')
+          r,g,b=im.getpixel((180,320))
+          if min(r,g,b)>220:
+              raise SystemExit('Zepp login screen is still open; device download/launch NOT verified')
+          print('Zepp login overlay dismissed; emulator catalogue can be inspected')
+          PY
           # Exact model and position verified in prior redacted screenshots:
           # Balance2, latest v1.1.0, OS 5.0, API 4.2.
           mkdir -p simulator-ci
