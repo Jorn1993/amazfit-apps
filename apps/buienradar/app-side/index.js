@@ -152,8 +152,11 @@ async function sendFrame(index,id,snapshot=null){
     if(converted?.targetFilePath)break;
    }catch(e){lastError=e;converted=null;}
   }
-  if(!converted?.targetFilePath)
-   throw Error(String(lastError&&lastError.message||'RADAR: geen PNG'));
+  if(!converted?.targetFilePath){
+   const message=String(lastError&&lastError.message||'geen bruikbare PNG');
+   throw Error(/^(?:DOWNLOAD|CONVERT):/.test(message)?
+    message:'CONVERT: '+message);
+  }
   updateRadar('transfer',null,id,index);
   if(typeof transferFile==='undefined'||typeof transferFile.getOutbox!=='function')
    throw Error('TRANSFER: Zepp Side Service ontbreekt');
