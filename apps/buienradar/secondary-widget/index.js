@@ -26,6 +26,22 @@ function forecastText(data){
   return 'Regen in '+s.etaMinutes+' min';
  return null;
 }
+function radarPreview(now=Date.now()){
+ try{
+  const cache=JSON.parse(store.getItem('buienradar.radar-frames.v1')||'null');
+  const stamp=Date.parse(cache&&cache.generatedAt);
+  const age=now-stamp;
+  if(cache&&Array.isArray(cache.frames)&&cache.frames.length&&
+   age>=0&&age<35*60000){
+   const selected=cache.mode==='snapshot'?0:
+    Math.min(2,cache.frames.length-1);
+   const path=cache.frames[selected];
+   if(typeof path==='string'&&path.startsWith('data://'))
+    return {path,fresh:true};
+  }
+ }catch(_){}
+ return {path:'radar-frame-2.png',fresh:false};
+}
 function presentation(){
  const data=read();
  let city=data&&data.location||'Buienradar';
@@ -52,10 +68,12 @@ SecondaryWidget({
   const v=presentation();
   const make=(type,props)=>ui.createWidget(type,props);
   make(ui.widget.FILL_RECT,{x:0,y:0,w:480,h:480,color:BG});
-  // The still preview is the official radar frame, containing the authentic
-  // timestamp at the bottom. It is not a live streaming secondary widget.
-  make(ui.widget.IMG,{x:0,y:0,w:480,h:480,
-   src:'radar-frame-2.png',auto_scale:true});
+  // Prefer the latest verified frame delivered directly by the phone.
+  // The bundled picture is an offline archive, NOT automatically current.
+  const radar=radarPreview();
+  this.radarImage=make(ui.widget.IMG,{x:0,y:0,w:480,h:480,
+   src:radar.path,auto_scale:true});
+  this.radarFresh=radar.fresh;
   // Single circular-safe capsule. No widget UI is drawn over y>=390, so
   // the full source-frame time (y≈398-443) stays visible.
   this.header=make(ui.widget.BUTTON,{x:116,y:46,w:248,h:82,
@@ -67,6 +85,8 @@ SecondaryWidget({
     align_h:ui.align.CENTER_H,text_style:ui.text_style.ELLIPSIS});
   this.locationLabel=label(136,55,208,34,v.city,26,WHITE);
   this.weatherLabel=label(124,93,232,29,v.subtitle,21,v.color);
+  this.radarAgeLabel=label(160,140,160,23,
+   this.radarFresh?'':'RADARARCHIEF',16,SOFT);
  },
  // Zepp does not automatically rebuild SecondaryWidget after returning from
  // the main app. Read the shared LocalStorage again when the tile is focused.
@@ -76,5 +96,11 @@ SecondaryWidget({
   this.locationLabel.setProperty(ui.prop.TEXT,v.city);
   this.weatherLabel.setProperty(ui.prop.TEXT,v.subtitle);
   this.weatherLabel.setProperty(ui.prop.COLOR,v.color);
+  const radar=radarPreview();
+  this.radarFresh=radar.fresh;
+  this.radarImage.setProperty(ui.prop.MORE,{src:radar.path,
+   x:0,y:0,w:480,h:480,auto_scale:true});
+  this.radarAgeLabel.setProperty(ui.prop.TEXT,
+   radar.fresh?'':'RADARARCHIEF');
  }
 });
