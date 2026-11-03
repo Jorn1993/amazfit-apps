@@ -64,3 +64,17 @@ jobs:
            if len(frames)>1:
             print('Proxy pixel changes',[(ImageChops.difference(frames[0],im).getbbox() is not None) for im in frames[1:]])
           PY
+
+      - name: Check official Buienradar static BE image fallback
+        run: |
+          python - <<'PY'
+          import requests,io
+          from PIL import Image
+          for name in ['RadarMapRainWebmercatorBE','RadarMapRainBE']:
+           url='https://image.buienradar.nl/2.0/image/single/'+name
+           try:
+            r=requests.get(url,params=dict(width=480,height=480,renderBackground='True',renderBranding='False',renderText='False'),timeout=22)
+            im=Image.open(io.BytesIO(r.content))
+            print('STATIC',name,'HTTP',r.status_code,'contentType',r.headers.get('Content-Type'),'format',im.format,'size',im.size,'bytes',len(r.content))
+           except Exception as e:print('STATIC ERROR',name,str(e)[:150])
+          PY
