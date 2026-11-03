@@ -275,8 +275,8 @@ Page(BasePage({
    if(fetchedAt<this.currentFetchedAt)return;
    this.currentFrame={path:file.filePath};
    this.currentFetchedAt=fetchedAt;
-   this.radarStage='received';
-   this.radarSyncing=false;this.radarError=null;
+   this.radarStage='current-ready';
+   this.radarError=null;
    try{storage.setItem('buienradar.current.v2',JSON.stringify({
     source:'Buienradar',path:file.filePath,fetchedAt
    }));}catch(_){}
@@ -320,6 +320,7 @@ Page(BasePage({
   if(this.disposed||!Number.isFinite(fetchedAt)||
      Date.now()-fetchedAt>=8*60000||fetchedAt<this.radarGifAt)return;
   const epoch=++this.radarAnimationEpoch;
+  this.radarPaintEpoch++;
   let reader;
   try{
    const bytes=readFileSync({path});
@@ -345,6 +346,9 @@ Page(BasePage({
      this.radarGifAt=fetchedAt;
      this.radarFrameIndex=0;
      this.radarDecodeError=null;
+     this.radarCanvasVisible=false;
+     this.radarCanvas.setProperty(ui.prop.VISIBLE,false);
+     this.applyRadarFrame();
      void this.paintRadarRects(first.rects,true,0);
      return;
     }
@@ -419,10 +423,12 @@ Page(BasePage({
  },
  updateRadarLabel(){
   if(!this.radarLabel)return;
-  const current=this.hasCurrentRadar();
+  const current=this.hasCurrentRadar(),forecast=this.hasForecastRadar();
   const stages={
    idle:'BUIENRADAR',starting:'VERBINDEN',download:'KAART DOWNLOADEN',
    convert:'KAART OMZETTEN',transfer:'KAART OVERBRENGEN',
+   'gif-download':'VOORSPELLING OPHALEN',
+   'gif-transfer':'VOORSPELLING OVERBRENGEN',
    transferred:'BEELD ONTVANGEN',received:'ACTUEEL'
   };
   const label=this.radarError?'OPNIEUW PROBEREN':
@@ -434,15 +440,28 @@ Page(BasePage({
    normal_color:0x102839
   });
   // Never put a permanent opaque control over a real fullscreen map.
-  this.radarLabel.setProperty(ui.prop.VISIBLE,!current||!!this.radarError);
+  this.radarLabel.setProperty(ui.prop.VISIBLE,
+   (!current&&!forecast)||!!this.radarError);
+  const error=this.radarError||this.radarDecodeError;
   this.radarErrorText?.setProperty(ui.prop.TEXT,
-   this.radarError?String(this.radarError).slice(0,48):'');
+   error?String(error).slice(0,48):'');
   this.radarTime?.setProperty(ui.prop.TEXT,
-   current?'BUIENRADAR · ACTUEEL':'BUIENRADAR · RADAR');
+   forecast?'BUIENRADAR · VOORUIT':current?'BUIENRADAR · ACTUEEL':
+   'BUIENRADAR · RADAR');
  },
  nextRadarFrame(){
-  // Current observation has no invented future animation.
-  if(this.radarDisplayed&&!this.hasCurrentRadar())this.applyRadarFrame();
+  if(!this.hasForecastRadar()){
+   if(this.radarCanvasVisible){
+    this.radarCanvasVisible=false;
+    this.radarCanvas?.setProperty(ui.prop.VISIBLE,false);
+   }
+   if(this.radarDisplayed&&!this.hasCurrentRadar())this.applyRadarFrame();
+   return;
+  }
+  if(this.radarPainting||this.radarCanvasFrames.length<2)return;
+  const next=(this.radarFrameIndex+1)%this.radarCanvasFrames.length;
+  const runs=next===0?this.radarWrapRects:this.radarCanvasFrames[next].rects;
+  void this.paintRadarRects(runs,false,next);
  },
  async phone(message,timeout=20000){
   if(typeof this.request!=='function')throw Error('Zepp verbinding niet beschikbaar');
