@@ -1,0 +1,36 @@
+name: Buienradar native GIF decoder verification
+on:
+  push:
+    branches: ['feature/buienradar-native-gif']
+    paths:
+      - 'apps/buienradar/**'
+      - '.github/workflows/buienradar-native-gif.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Offline decoder tests
+        run: node --test apps/buienradar/tests/native-gif.test.mjs
+      - name: Get live official Buienradar Belgium forecast GIF
+        run: |
+          curl -fL --max-time 35 --retry 2 -o /tmp/buienradar-live.gif 'https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1'
+          file /tmp/buienradar-live.gif
+          BUIENRADAR_REAL_GIF=/tmp/buienradar-live.gif node --test apps/buienradar/tests/native-gif.test.mjs
+      - name: Verify exported native Zepp indexed TGA is valid image data
+        run: |
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          from PIL import Image
+          im=Image.open('/tmp/buienradar-native-frame.png')
+          im.load()
+          assert im.size==(320,320)
+          print('Native TGA:',im.format,im.mode,im.size)
+          PY
