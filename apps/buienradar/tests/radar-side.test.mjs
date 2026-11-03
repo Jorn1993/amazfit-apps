@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 function create({download='success',convert='success',transfer='success'}={}){
- let service,downloaderUrl=null,transfers=0;
+ let service,downloaderUrl=null,transfers=0,conversions=0;
  const delays=new Set();
  const delayed=(fn,ms)=>{
   const t=setTimeout(()=>{delays.delete(t);fn();},ms>500?15:ms);
@@ -23,8 +23,11 @@ function create({download='success',convert='success',transfer='success'}={}){
  const manifest={version:1,source:'Buienradar.nl',
   product:'RadarMapRainWebmercatorBE',generatedAt:new Date().toISOString(),
   frameCount:6,frames:Array.from({length:6},(_,i)=>'frame-'+i+'.png')};
- const image={convert:async()=>convert==='success'?{targetFilePath:'data://download/converted.img'}:
-  Promise.reject(Error('bad PNG'))};
+ const image={convert:async()=>{
+  conversions++;
+  return convert==='success'||(convert==='fail-first'&&conversions>1)?
+   {targetFilePath:'data://download/converted.img'}:Promise.reject(Error('bad PNG'));
+ }};
  const transferFile={getOutbox(){return {enqueueFile(_,params){
   assert.ok(['buienradar-frame','buienradar-snapshot'].includes(params.kind));
   transfers++;return {readyState:'pending',on(name,cb){
@@ -100,6 +103,17 @@ test('Current official PNG snapshot downloads and transfers without GitHub cache
   await settle();
   assert.match(sim.getUrl(),/image\.buienradar\.nl\/2\.0\/image\/single\//);
   assert.equal((await sim.call('radar.status')).stage,'transferred');
+  assert.equal(sim.count(),1);
+ }finally{sim.cleanup();}
+});
+
+test('Two direct single-image PNG sources are tried when the first cannot convert',async()=>{
+ const sim=create({convert:'fail-first'});
+ try{
+  assert.equal((await sim.call('radar.snapshot')).ok,true);
+  await settle();
+  assert.equal((await sim.call('radar.status')).stage,'transferred');
+  assert.match(sim.getUrl(),/image\/single\/RadarMapRainBE/);
   assert.equal(sim.count(),1);
  }finally{sim.cleanup();}
 });

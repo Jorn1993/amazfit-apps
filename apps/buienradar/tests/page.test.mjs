@@ -61,7 +61,17 @@ function launch(connected=true) {
     sessionId:'t'+i,filePath:'data://download/frame-'+i+'.img',
     readyState:'transferred'};
    callbacks.NEWFILE();
-  },getStopped:()=>stopped
+  },
+  receiveLatePath(){
+   const stamp=new Date().toISOString();
+   frame={params:{kind:'buienradar-snapshot',
+    generatedAt:stamp,frameIndex:0},sessionId:'late',
+    readyState:'transferred',filePath:null};
+   callbacks.NEWFILE();
+   frame.filePath='data://download/late-valid.img';
+   callbacks.FILE();
+  },
+  getStopped:()=>stopped
  };
 }
 const flush=async()=>{for(let i=0;i<40;i++)await Promise.resolve();};
@@ -175,5 +185,22 @@ test('Radar retry button exists and does not misrepresent old pictures as curren
  t.page.radarError='DOWNLOAD: offline';t.page.radarSyncing=false;
  t.page.updateRadarLabel();
  assert.match(t.page.radarLabel.values.text,/DOWNLOAD MISLUKT/);
+ t.page.onDestroy();
+});
+
+test('A file received before its destination path becomes visible is retried on FILE',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receiveLatePath();
+ assert.equal(t.page.radarMode,'snapshot');
+ assert.equal(t.page.radarPaths[0],'data://download/late-valid.img');
+ assert.equal(t.page.radarLabel.values.visible,false);
+ t.page.onDestroy();
+});
+test('Radar failure shows a clear retry action, never a stale-as-live claim',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.page.radarError='CONVERT: corrupt PNG';t.page.radarSyncing=false;
+ t.page.updateRadarLabel();
+ assert.match(t.page.radarLabel.values.text,/AFBEELDING MISLUKT/);
+ assert.equal(typeof t.page.radarLabel.values.click_func,'function');
  t.page.onDestroy();
 });

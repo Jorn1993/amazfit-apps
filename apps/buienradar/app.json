@@ -9,7 +9,7 @@
       "code": 17
     },
     "vender": "Personal prototype",
-    "description": "Direct Buienradar image loading with verified BLE confirmation, retry and diagnostic error stages",
+    "description": "Verified direct Buienradar PNGs, confirmed BLE reception and on-watch retry",
     "icon": "icon.png"
   },
   "permissions": [
