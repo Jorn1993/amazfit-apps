@@ -1,24 +1,14 @@
-// Official Buienradar +3h Belgium animation: cached first image only.
-// The app plays all frames; the widget shows the latest valid forecast preview.
+// Fullscreen latest verified current Buienradar Belgium observation.
+// Never show historical or unverified animated radar caches.
 import * as ui from '@zos/ui';
 import {push} from '@zos/router';
 import {LocalStorage} from '@zos/storage';
 const store=new LocalStorage(),INK=0xf7fafc,MUTED=0xb4cad8,BG=0x071b2a;
-function currentForecast(now=Date.now()){
- try{
-  const d=JSON.parse(store.getItem('buienradar.animation.v3')||'null');
-  if(!d||d.source!=='Buienradar'||d.horizonMinutes!==180||
-     !Number.isFinite(d.fetchedAt)||now<d.fetchedAt||
-     now-d.fetchedAt>=12*60000||!Array.isArray(d.frames))return null;
-  return d.frames.find(f=>f&&typeof f.path==='string'&&
-   f.path.startsWith('data://'))||null;
- }catch(_){return null;}
-}
 function currentObservation(now=Date.now()){
  try{
-  const d=JSON.parse(store.getItem('buienradar.current.v1')||'null');
+  const d=JSON.parse(store.getItem('buienradar.current.v2')||'null');
   if(!d||d.source!=='Buienradar'||!Number.isFinite(d.fetchedAt)||
-     now<d.fetchedAt||now-d.fetchedAt>=12*60000||
+     now<d.fetchedAt||now-d.fetchedAt>=8*60000||
      typeof d.path!=='string'||!d.path.startsWith('data://'))return null;
   return {path:d.path};
  }catch(_){return null;}
@@ -38,7 +28,7 @@ function city(){
  return 'Buienradar';
 }
 function preview(now=Date.now()){
- const future=currentForecast(now),frame=future||currentObservation(now);
+ const frame=currentObservation(now);
  const weather=currentWeather(now);
  const status=weather?.summary120;
  let heading=city();
@@ -48,7 +38,7 @@ function preview(now=Date.now()){
   status.state==='raining'?'Regen':
   status.state==='incoming'&&Number.isFinite(status.etaMinutes)?
    'Regen over '+status.etaMinutes+'m':'');
- return {frame,title:heading.slice(0,32),time:future?'Buienradar +3u':frame?'Buienradar · actueel':'Buienradar'};
+ return {frame,title:heading.slice(0,32),time:frame?'Buienradar · actueel':'Buienradar'};
 }
 SecondaryWidget({
  build(){
