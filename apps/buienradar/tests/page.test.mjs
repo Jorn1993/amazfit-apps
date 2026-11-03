@@ -50,13 +50,14 @@ function launch(connected=true) {
   if(req.method==='radar.manifest')return {ok:true,generatedAt:'2026-11-02T22:00:00Z',
    frameCount:6,frames:Array.from({length:6},(_,i)=>'frame-'+i+'.png')};
   if(req.method==='radar.frame')return {ok:false,error:'mock BLE'};
+  if(req.method==='radar.snapshot')return {ok:true,generatedAt:new Date().toISOString()};
   return {ok:false,error:'unsupported'};
  }};
  return {page,widgets,cache,requests,getSwiper:()=>swipe,
   setPage:i=>{active=i;},crown:(n)=>crown?.(1,n),
-  receive(i){
-   frame={params:{kind:'buienradar-frame',
-    generatedAt:'2026-11-02T22:00:00Z',frameIndex:i},
+  receive(i,kind='buienradar-frame',stamp=new Date().toISOString()){
+   frame={params:{kind,
+    generatedAt:stamp,frameIndex:i},
     sessionId:'t'+i,filePath:'data://download/frame-'+i+'.img',
     readyState:'transferred'};
    callbacks.NEWFILE();
@@ -81,7 +82,7 @@ test('Three native pages use horizontal swiping; all have a location entry',asyn
   assert.equal(b.length,i===1?3:1);
   safe(t.page.cityLabels[i].values);
  }
- t.page.onDestroy();assert.equal(t.getStopped(),2);
+ t.page.onDestroy();assert.equal(t.getStopped(),3);
 });
 test('Radar fills face and hides bogus marker and on-map zoom buttons',async()=>{
  const t=launch();t.page.build();await flush();
@@ -91,8 +92,10 @@ test('Radar fills face and hides bogus marker and on-map zoom buttons',async()=>
  assert.equal(t.page.parts[0].filter(w=>w.type===2).length,1);
  t.page.changeZoom(1);
  assert.ok(t.page.zoom>1);
- t.page.nextRadarFrame();
- assert.equal(t.page.frameIndex,1);
+ // Never animate the bundled old frames as if they were current.
+ t.page.nextRadarFrame();assert.equal(t.page.frameIndex,0);
+ t.page.radarMode='animation';t.page.radarStamp=new Date().toISOString();
+ t.page.nextRadarFrame();assert.equal(t.page.frameIndex,1);
  t.page.onDestroy();
 });
 test('One data set controls both 1h/2h forecast, graph and station metrics',async()=>{
@@ -139,5 +142,26 @@ test('Rain alert does not fire late after its intended lead time',async()=>{
   points:Array.from({length:24},(_,i)=>({mmh:i>=2?1:0}))};
  t.page.scheduleRainAlert(t.page.rain);
  assert.equal(t.cache.get('buienradar.alert-alarm-id'),'0');
+ t.page.onDestroy();
+});
+
+test('Stale scheduled animation triggers direct official phone radar snapshot',async()=>{
+ const t=launch();t.page.build();await flush();
+ assert.ok(t.requests.some(req=>req.method==='radar.snapshot'),
+  'Official direct PNG fallback should run if scheduled GIF cache is outdated');
+ assert.equal(t.page.radarMode,'archive');
+ assert.equal(t.page.radarLabel.values.text,'VEROUDERDE RADAR');
+ t.page.onDestroy();
+});
+test('Direct snapshot over BLE replaces outdated loop with a fresh single frame',async()=>{
+ const t=launch();t.page.build();await flush();
+ const stamp=new Date().toISOString();
+ t.receive(0,'buienradar-snapshot',stamp);
+ assert.equal(t.page.radarMode,'snapshot');
+ assert.equal(t.page.radarPaths.length,1);
+ assert.equal(t.page.radarLabel.values.text,'LOSSE OPNAME');
+ assert.equal(JSON.parse(t.cache.get('buienradar.radar-frames.v1')).mode,'snapshot');
+ t.page.nextRadarFrame();
+ assert.equal(t.page.frameIndex,0,'single snapshot never pretends to animate');
  t.page.onDestroy();
 });

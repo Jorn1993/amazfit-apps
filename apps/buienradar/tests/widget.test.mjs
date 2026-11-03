@@ -8,7 +8,7 @@ function launch(saved=null,stamp=Date.now()){
  if(saved)cache.set('buienradar.overview.v3',
   JSON.stringify({...saved,at:stamp}));
  const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3,IMG:4},
-  prop:{TEXT:'text',COLOR:'color'},
+  prop:{TEXT:'text',COLOR:'color',MORE:'more'},
   align:{CENTER_H:1},text_style:{ELLIPSIS:1},
   createWidget(type,props){
    const w={type,props:{...props},setProperty(key,value){
@@ -88,4 +88,18 @@ test('All non-map widget elements fit safely within the circular display',()=>{
     'Clipped widget element '+(r.text||'tap capsule'));
   }
  }
+});
+
+test('Widget shows a recent direct radar snapshot instead of a bundled stale map',()=>{
+ const t=launch();
+ t.cache.set('buienradar.radar-frames.v1',JSON.stringify({
+  generatedAt:new Date().toISOString(),frames:['data://radar-direct.img'],mode:'snapshot'
+ }));
+ t.widget.onResume();
+ assert.equal(t.widget.radarImage.props.more.src,'data://radar-direct.img');
+ assert.equal(t.widget.radarAgeLabel.props.text,'');
+});
+test('Widget explicitly labels bundled imagery when no current radar exists',()=>{
+ const t=launch();
+ assert.equal(t.widget.radarAgeLabel.props.text,'RADARARCHIEF');
 });

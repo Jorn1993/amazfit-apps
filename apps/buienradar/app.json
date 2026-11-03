@@ -5,11 +5,11 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "0.9.3",
-      "code": 15
+      "name": "0.9.4",
+      "code": 16
     },
     "vender": "Personal prototype",
-    "description": "Fixed radar widget overlay, on-focus weather refresh, circular-safe glance header",
+    "description": "Direct official Buienradar radar snapshot fallback without Github; freshness status for radar and widget",
     "icon": "icon.png"
   },
   "permissions": [

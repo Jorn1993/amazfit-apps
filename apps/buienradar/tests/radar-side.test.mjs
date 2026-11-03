@@ -26,7 +26,7 @@ function create({download='success',convert='success',transfer='success'}={}){
  const image={convert:async()=>convert==='success'?{targetFilePath:'data://download/converted.img'}:
   Promise.reject(Error('bad PNG'))};
  const transferFile={getOutbox(){return {enqueueFile(_,params){
-  assert.equal(params.kind,'buienradar-frame');
+  assert.ok(['buienradar-frame','buienradar-snapshot'].includes(params.kind));
   transfers++;return {readyState:'pending',on(name,cb){
    if(name==='change')delayed(()=>cb({data:{readyState:transfer==='success'?
     'transferred':'error'}}),4);
@@ -90,5 +90,16 @@ test('Failed network download does not enqueue a blank frame',async()=>{
   const state=await sim.call('radar.status');
   assert.equal(state.stage,'failed');assert.match(state.error,/DOWNLOAD/);
   assert.equal(sim.count(),0);
+ }finally{sim.cleanup();}
+});
+
+test('Current official PNG snapshot downloads and transfers without GitHub cache',async()=>{
+ const sim=create();try{
+  const result=await sim.call('radar.snapshot');
+  assert.equal(result.ok,true);
+  await settle();
+  assert.match(sim.getUrl(),/image\.buienradar\.nl\/2\.0\/image\/animation\//);
+  assert.equal((await sim.call('radar.status')).stage,'transferred');
+  assert.equal(sim.count(),1);
  }finally{sim.cleanup();}
 });
