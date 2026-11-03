@@ -115,3 +115,38 @@ test('Radar has no permanent tiny zoom buttons and crown exists',async()=>{
  assert.equal(t.page.parts[0].filter(x=>x.type===2).length,2);
  t.page.onDestroy();
 });
+
+
+test('Proactive refresh keeps a valid future image visible until the first replacement arrives',async()=>{
+ const now=Date.now();
+ const old={source:'KMI',fetchedAt:now-9*60000,
+  frames:[{validAt:now+45*60000,path:'data://prior.img'}]};
+ const t=launch({cacheFuture:old});t.page.build();await flush();
+ assert.ok(t.requests.some(r=>r.method==='radar.forecast'));
+ assert.equal(t.page.radarWidget.values.src,'data://prior.img');
+ t.receive(0,t.times[0],'data://replacement.img');
+ assert.equal(t.page.radarWidget.values.src,'data://replacement.img');
+ assert.equal(t.page.radarFallback,null);
+ t.page.onDestroy();
+});
+test('Manual refresh also preserves a recent future image if BLE fails',async()=>{
+ const now=Date.now();
+ const good={source:'KMI',fetchedAt:now-60000,
+  frames:[{validAt:now+45*60000,path:'data://still-good.img'}]};
+ const t=launch({cacheFuture:good});t.page.build();await flush();
+ await t.page.requestRadar(true);await flush();
+ assert.equal(t.page.radarWidget.values.src,'data://still-good.img');
+ t.page.onDestroy();
+});
+test('Radar frame timeout invalidation does not leave an expired image on screen',async()=>{
+ const now=Date.now();
+ const t=launch({cacheFuture:{source:'KMI',fetchedAt:now-60000,
+  frames:[{validAt:now+3600000,path:'data://prior.img'}]}});
+ t.page.build();await flush();
+ assert.equal(t.page.radarDisplayed,true);
+ // A controlled stale-cache scenario verifies blanking on the next animation tick.
+ t.page.radarFetchedAt=now-13*60000;
+ t.page.nextRadarFrame();
+ assert.equal(t.page.radarWidget.values.src,'kmi-clear.png');
+ t.page.onDestroy();
+});

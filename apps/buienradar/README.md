@@ -1,12 +1,12 @@
 # Buienradar for Amazfit Balance 2
 
-**1.0.0 · Zepp OS 3 · privéprototype**
+**1.0.1 · Zepp OS 3 · privéprototype**
 
 ## Radar: uitsluitend toekomstige beelden, zonder GitHub
 
 De radar toont een **+3 uur-neerslagvoorspelling van het Koninklijk Meteorologisch Instituut (KMI)**. We gebruiken bewust een andere kaartbron dan de lokale neerslagvoorspelling van Buienradar: de officiële Buienradar-voorspelling is wel als geanimeerde GIF beschikbaar, maar niet als afzonderlijke PNG's, en de Zepp Side Service kan die GIF niet rechtstreeks decoderen. KMI publiceert een reeks afzonderlijke PNG-overlays met echte toekomstige tijdstippen.
 
-De dataflow is **horloge ↔ Zepp op telefoon ↔ KMI**, zonder GitHub tijdens het gebruik. De telefoon haalt de KMI-tijdlijn en de gekozen PNG-overlays rechtstreeks op, zet de overlays om naar het Zepp-formaat en verstuurt ze via Bluetooth. De kaartachtergrond voor België zit in het installatiepakket. Een nieuwe reeks wordt tijdens het gebruik periodiek opgehaald.
+De dataflow is **horloge ↔ Zepp op telefoon ↔ KMI**, zonder GitHub tijdens het gebruik. De telefoon haalt de KMI-tijdlijn en de gekozen PNG-overlays rechtstreeks op, zet de overlays om naar het Zepp-formaat en verstuurt ze via Bluetooth. De kaartachtergrond voor België zit in het installatiepakket. Een nieuwe reeks wordt tijdens het gebruik periodiek opgehaald. Vanaf 1.0.1 start de verversing vóór de 12-minutengrens. Een nog geldige toekomst-overlay blijft zichtbaar tijdens downloaden en Bluetooth-overdracht van de vervangende reeks. Zodra de geldigheidsduur verstrijkt verdwijnt de overlay ook zonder internet.
 
 **Geen oude radar als fallback.** Alleen afbeeldingen met een tijdstip ná nu en met een recent ontvangen voorspelling mogen worden getoond. Een in de app opgeslagen, geldige reeks van minder dan 12 minuten oud kan direct bij het openen getoond worden. Zonder zo'n cache is de ondergrond zichtbaar terwijl de eerste PNG gedownload en via BLE doorgestuurd wordt; bij netwerkfouten blijft de overlay leeg, met een herhaalactie. Een *actuele* voorspelling bij een volledig koude start kan niet fysiek instant zijn.
 

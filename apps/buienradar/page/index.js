@@ -60,6 +60,7 @@ Page(BasePage({
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
   this.radarFrames=[];this.radarTimes=[];this.radarFetchedAt=0;
   this.radarSyncing=false;this.radarError=null;this.radarEpoch=0;
+  this.radarFallback=null;this.radarDisplayed=false;
   this.frameIndex=0;this.pendingFrame=null;
   this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];this.cityLabels=[];this.lastCrown=0;
@@ -201,7 +202,9 @@ Page(BasePage({
    if(++this.configTick%12===0)this.checkConfig();
   },950);
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
-  this.radarTimer=setInterval(()=>{void this.requestRadar();},300000);
+  // Check frequently, but only fetch a new forecast once its age reaches 8m.
+  // This leaves a safety margin before the strict 12m display expiry.
+  this.radarTimer=setInterval(()=>{void this.requestRadar();},60000);
   void this.requestRadar();
   void this.readLocation();
   void this.refresh();
@@ -237,6 +240,7 @@ Page(BasePage({
      const frame={path:item.filePath,validAt,
       time:file.params.validTime};
      this.radarFrames[idx]=frame;
+     this.radarFallback=null; // First confirmed new frame replaces the prior forecast.
      record.done=true;
      this.saveRadarCache();
      this.applyRadarFrame();
@@ -264,9 +268,17 @@ Page(BasePage({
    Date.now()-this.radarFetchedAt<12*60000&&
    this.radarFrames.some(f=>f&&f.validAt>Date.now());
  },
+ visibleRadarFrames(now=Date.now()){
+  if(this.isRadarFresh())
+   return this.radarFrames.filter(f=>f&&f.validAt>now);
+  const prior=this.radarFallback;
+  if(prior&&now>=prior.fetchedAt&&now-prior.fetchedAt<12*60000)
+   return prior.frames.filter(f=>f&&f.validAt>now);
+  return [];
+ },
  updateRadarLabel(){
   if(!this.radarLabel)return;
-  const good=this.isRadarFresh();
+  const good=this.visibleRadarFrames().length>0;
   let caption='';
   if(!good){
    if(this.radarSyncing)caption='VOORSPELLING LADEN';
@@ -286,8 +298,12 @@ Page(BasePage({
   }catch(_){}
  },
  nextRadarFrame(){
-  if(!this.isRadarFresh())return;
-  const frames=this.radarFrames.filter(f=>f&&f.validAt>Date.now());
+  const frames=this.visibleRadarFrames();
+  if(!frames.length){
+   // An expired cached image must disappear, even with no network available.
+   if(this.radarDisplayed)this.applyRadarFrame();
+   return;
+  }
   if(frames.length<2)return;
   this.frameIndex=(this.frameIndex+1)%frames.length;
   this.applyRadarFrame();
@@ -323,7 +339,8 @@ Page(BasePage({
   if(this.disposed||this.radarSyncing)return;
   // A valid cached future frame is immediately usable: never clear it
   // on startup while fetching a replacement in the background.
-  if(!force&&this.isRadarFresh()&&this.radarFrames.some(Boolean))return;
+  if(!force&&this.isRadarFresh()&&
+     Date.now()-this.radarFetchedAt<8*60000)return;
   this.radarSyncing=true;this.radarError=null;this.updateRadarLabel();
   try{
    const answer=await this.phone({method:'radar.forecast'},17000);
@@ -332,11 +349,19 @@ Page(BasePage({
    const times=answer.frames.map(f=>Number(f.validAt));
    if(times.some(t=>!Number.isFinite(t))||times[0]<=Date.now())
     throw Error('Geen geldige toekomstige radartijden');
+   // Retain only a strictly fresh, future-dated prior image while the new
+   // PNGs download. Never replace a visible forecast with an empty map.
+   const priorFrames=this.visibleRadarFrames();
+   if(priorFrames.length){
+    const fetchedAt=this.isRadarFresh()?this.radarFetchedAt:
+     this.radarFallback?.fetchedAt;
+    this.radarFallback={frames:priorFrames,fetchedAt};
+   }else this.radarFallback=null;
    this.radarTimes=times;
    this.radarFetchedAt=Number(answer.fetchedAt);
    this.radarFrames=new Array(times.length).fill(null);
    this.frameIndex=0;
-   this.applyRadarFrame(); // blank but never display old pixels
+   this.applyRadarFrame();
    for(let i=0;i<times.length&&!this.disposed;i++){
     if(times[i]<=Date.now())continue;
     try{await this.downloadFutureFrame(i);}
@@ -471,9 +496,9 @@ Page(BasePage({
   const geometry={x:Math.round((480-w)/2),y:Math.round(54+(368-h)/2),
    w,h,auto_scale:true};
   this.radarBase.setProperty(ui.prop.MORE,geometry);
-  const available=this.radarFrames.filter(f=>f&&f.validAt>Date.now());
-  const fresh=this.isRadarFresh()&&available.length>0;
-  const frame=fresh?available[this.frameIndex%available.length]:null;
+  const available=this.visibleRadarFrames();
+  const frame=available.length?available[this.frameIndex%available.length]:null;
+  this.radarDisplayed=!!frame;
   this.radarWidget.setProperty(ui.prop.MORE,{
    ...geometry,src:frame?.path||'kmi-clear.png'
   });

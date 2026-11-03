@@ -5,8 +5,8 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "1.0.0",
-      "code": 18
+      "name": "1.0.1",
+      "code": 19
     },
     "vender": "Personal prototype",
     "description": "Forward-looking 3h Belgian KMI precipitation frames delivered directly from phone; Buienradar rain and weather",
