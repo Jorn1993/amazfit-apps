@@ -1,6 +1,6 @@
 # Buienradar · Amazfit Balance 2
 
-**Release 0.9.1 · Zepp OS 3 · privéprototype**
+**Release 0.9.2 · Zepp OS 3 · privéprototype**
 
 ## Ontwerp (alle schermen als één systeem)
 
@@ -12,7 +12,7 @@ Het ontwerp is volledig opgebouwd voor een rond scherm van **480 × 480 px**, me
 
 Op **elk scherm** opent een tik op de locatienaam de instellingen. Daar kies je via een **echte lijst van 12 locaties** (verdeeld over drie vlot swipebare pagina's) je plaats. De gekozen locatie wordt pas opgeslagen na bevestiging door de Zepp-telefoonservice.
 
-De aparte widget links van het horloge heeft **radar als hoofdinhoud**. Slechts één smalle balk onderaan toont de laatst bekende temperatuur en regenstatus, met een tik om de app te openen. Wanneer gegevens verlopen zijn, verschijnt geen fictieve actuele regenstatus.
+De aparte widget links van het horloge heeft **radar als hoofdinhoud**. Slechts één smalle balk onderaan toont temperatuur en regenstatus wanneer de voorspelling actueel is; bij verouderde gegevens verschijnt uitsluitend ‘Radar · niet actueel’. Er is geen tweede tekstregel die de kaart bedekt. Tik op de balk om de app te openen. Wanneer gegevens verlopen zijn, verschijnt geen fictieve actuele regenstatus.
 
 ## Automatische update
 
