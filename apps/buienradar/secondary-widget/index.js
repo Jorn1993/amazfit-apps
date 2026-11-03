@@ -6,7 +6,7 @@ import {LocalStorage} from '@zos/storage';
 const store=new LocalStorage(),INK=0xf7fafc,MUTED=0xb4cad8,BG=0x071b2a;
 function currentForecast(now=Date.now()){
  try{
-  const d=JSON.parse(store.getItem('buienradar.animation.v2')||'null');
+  const d=JSON.parse(store.getItem('buienradar.animation.v3')||'null');
   if(!d||d.source!=='Buienradar'||d.horizonMinutes!==180||
      !Number.isFinite(d.fetchedAt)||now<d.fetchedAt||
      now-d.fetchedAt>=12*60000||!Array.isArray(d.frames))return null;
