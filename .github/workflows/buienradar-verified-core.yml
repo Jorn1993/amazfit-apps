@@ -31,9 +31,17 @@ jobs:
       - name: Run native app regression tests
         run: |
           node --check apps/buienradar/page/index.js
+          node --check apps/buienradar/page/gif-decoder.js
+          node --check apps/buienradar/page/radar-canvas.js
           node --check apps/buienradar/app-side/index.js
           node --check apps/buienradar/secondary-widget/index.js
           node --test apps/buienradar/tests/*.test.mjs
+      - name: Verify real live future GIF can be decoded into moving RGB frames
+        run: |
+          curl -fL --retry 2 --max-time 75 \
+            -o /tmp/buienradar-real-future.gif \
+            'https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1'
+          BUIENRADAR_REAL_GIF=/tmp/buienradar-real-future.gif node --test apps/buienradar/tests/native-gif.test.mjs
       - name: Build complete native Zepp OS Balance 2 app
         run: |
           npm install --prefix zeus-cli @zeppos/zeus-cli@1.9.3
