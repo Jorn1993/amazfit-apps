@@ -1,0 +1,1 @@
+zpkd1://raw.githubusercontent.com/Jorn1993/amazfit-apps/probe/buienradar-one-image/experiments/buienradar-single-image/public/radar-probe-latest.zpk
