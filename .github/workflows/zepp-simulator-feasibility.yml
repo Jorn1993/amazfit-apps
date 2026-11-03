@@ -65,31 +65,34 @@ jobs:
           sleep 14
           xdotool mousemove --sync 1115 132 click 1 || true
           sleep 5
-          # Walk the scrollable Zepp emulator catalogue in the real GUI.
-          # Crop/redact screenshots before they become downloadable artifacts.
+          # We found "Balance2", latest V1.1.0, 162MB in the real catalogue.
+          # A single 6-wheel-step scroll places it at x1097,y596.
           mkdir -p simulator-ci
-          xdotool mousemove --sync 970 570
-          for page in 0 1 2 3 4 5; do
-            scrot -z "/tmp/zepp-catalogue-${page}.png"
-            python3 - "$page" <<'PY'
-          import sys
+          xdotool mousemove --sync 990 650 click --repeat 6 --delay 90 5
+          sleep 3
+          scrot -z /tmp/balance2-before-download.png
+          xdotool mousemove --sync 1097 596 click 1
+          sleep 12
+          scrot -z /tmp/balance2-after-12s.png
+          sleep 45
+          scrot -z /tmp/balance2-after-57s.png
+          sleep 65
+          scrot -z /tmp/balance2-after-122s.png
+          python3 - <<'PY'
           from PIL import Image,ImageDraw
-          page=sys.argv[1]
-          im=Image.open('/tmp/zepp-catalogue-'+page+'.png').convert('RGB')
-          draw=ImageDraw.Draw(im)
-          draw.rectangle((0,0,1280,210),fill=(15,15,15))
-          # Hide any login-field contents if authentication has not succeeded.
-          draw.rectangle((466,270,830,422),fill=(15,15,15))
-          im.save('simulator-ci/emulator-catalogue-'+page+'.png')
+          from pathlib import Path
+          for name in ('before-download','after-12s','after-57s','after-122s'):
+              im=Image.open('/tmp/balance2-'+name+'.png').convert('RGB')
+              d=ImageDraw.Draw(im)
+              d.rectangle((0,0,1280,210),fill=(15,15,15))
+              d.rectangle((466,270,830,422),fill=(15,15,15))
+              im.save('simulator-ci/balance2-'+name+'-redacted.png')
           PY
-            xdotool mousemove --sync 990 650 click --repeat 6 --delay 90 5
-            sleep 2
-          done
-          test -s simulator-ci/emulator-catalogue-0.png
+          test -s simulator-ci/balance2-after-122s-redacted.png
       - name: Upload redacted simulator status (no session data)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zepp-balance2-model-discovery
-          path: simulator-ci/emulator-catalogue-*.png
+          name: zepp-balance2-emulator-download
+          path: simulator-ci/balance2-*-redacted.png
           if-no-files-found: warn
