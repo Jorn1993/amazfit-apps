@@ -224,10 +224,18 @@ Page(BasePage({
     const index=Number(file.params.frameIndex);
     if(!Number.isInteger(index)||index<0||index>=12)return;
     const id=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
-    if(handled[id])return;
+    if(handled[id]){
+     // Zepp may return a new FileObject for the FILE event rather than
+     // mutating the NEWFILE object. Replace the pending reference.
+     const pending=handled[id];
+     if(file.filePath)pending.file=file;
+     if(!pending.done&&pending.file.readyState==='transferred')
+      pending.done=pending.load();
+     return;
+    }
     const entry={file,done:false,load:()=>{
-     // Transfer state can become "transferred" before the destination
-     // filePath is available. Retry on the next FILE event.
+     const file=entry.file;
+     // Transfer status can arrive before the destination filePath.
      if(this.disposed||!file.filePath)return false;
      const stamp=Date.parse(file.params.generatedAt);
      if(!Number.isFinite(stamp)||stamp>Date.now()+60000||
