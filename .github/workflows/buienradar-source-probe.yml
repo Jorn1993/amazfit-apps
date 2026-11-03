@@ -39,3 +39,28 @@ jobs:
            except Exception as e:
             print(label,'ERROR',str(e)[:300])
           PY
+          # Confirm whether a public image transformer can extract *different* forecast frames.
+          python - <<'PY'
+          import requests,io,hashlib
+          from PIL import Image,ImageChops
+          src='https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE?height=240&width=240&renderBackground=True&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1'
+          s=requests.Session()
+          ref=s.get(src,timeout=35);ref.raise_for_status()
+          g=Image.open(io.BytesIO(ref.content));print('Reference GIF frames:',g.n_frames)
+          endpoints=['https://images.weserv.nl/']
+          for endpoint in endpoints:
+           frames=[]
+           for n in [0,1,5,10,16]:
+            params={'url':src,'page':n,'n':1,'output':'png'}
+            try:
+             resp=s.get(endpoint,params=params,timeout=35)
+             with Image.open(io.BytesIO(resp.content)) as im:
+              im.load()
+              print('Proxy frame',n,'http',resp.status_code,'type',resp.headers.get('Content-Type'),
+                'format',im.format,'bytes',len(resp.content),'md5',hashlib.md5(resp.content).hexdigest(),
+                'sample',im.convert('RGB').getpixel((120,120)))
+              frames.append(im.convert('RGB').copy())
+            except Exception as e:print('Proxy ERROR',n,resp.status_code,str(e)[:160])
+           if len(frames)>1:
+            print('Proxy pixel changes',[(ImageChops.difference(frames[0],im).getbbox() is not None) for im in frames[1:]])
+          PY
