@@ -5,11 +5,11 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "1.1.2",
-      "code": 24
+      "name": "1.1.3",
+      "code": 25
     },
     "vender": "Personal prototype",
-    "description": "Genuine Buienradar Belgium +3h forecast animation with native watch GIF decoding",
+    "description": "True Buienradar BE 3h forecast rendered through Zepp native phone image conversion",
     "icon": "icon.png"
   },
   "permissions": [

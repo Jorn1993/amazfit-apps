@@ -35,6 +35,7 @@ jobs:
           node --check apps/buienradar/page/index.js
           node --check apps/buienradar/app-side/index.js
           node --check apps/buienradar/page/gif-decoder.js
+          node --check apps/buienradar/app-side/frame-png.js
           node --check apps/buienradar/app-side/rain.js
           node --check apps/buienradar/app-side/weather.js
           node --check apps/buienradar/secondary-widget/index.js
