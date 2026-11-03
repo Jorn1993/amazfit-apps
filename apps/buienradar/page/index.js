@@ -494,7 +494,7 @@ Page(BasePage({
     this.updateRadarLabel();return;
    }
    const elapsed=Date.now()-this.radarRequestAt;
-   if(elapsed>105000){
+   if(elapsed>200000){
     if(!this.hasCurrentRadar())
      throw Error('RADAR: te lang geen recent beeld');
     this.radarDecodeError='ANIMATIE: niet ontvangen of verwerkt';
