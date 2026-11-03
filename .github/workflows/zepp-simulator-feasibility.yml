@@ -16,7 +16,7 @@ jobs:
       - name: Install Linux GUI test prerequisites
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb xauth x11-apps scrot libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0 curl
+          sudo apt-get install -y -qq xvfb xauth x11-apps scrot xdotool libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0 curl
       - name: Download official Zepp Simulator 2.1.2 Linux amd64
         run: |
           curl --fail --location --retry 2 --max-time 180 \
@@ -42,11 +42,16 @@ jobs:
           echo "Trying official Zepp simulator: $SIM" | tee simulator-ci/boot.log
           timeout 40 "$SIM" --no-sandbox >>simulator-ci/boot.log 2>&1 &
           PID=$!
-          sleep 23
+          sleep 10
           scrot -z simulator-ci/desktop.png || true
+          # Screenshot from first proof shows the official simulator window at
+          # x=115..1164, y=90..811; click its "download emulator" cloud icon.
+          xdotool mousemove --sync 1115 132 click 1
+          sleep 14
+          scrot -z simulator-ci/emulator-download-dialog.png || true
           ps -ef | grep -E 'simulator|qemu|electron' | grep -v grep >simulator-ci/processes.txt || true
           if kill -0 "$PID" 2>/dev/null; then
-            echo 'Simulator process remained running for 23s; GUI/profile and CLI link still unverified' | tee -a simulator-ci/boot.log
+            echo 'Simulator process remained running after opening emulator download UI; GUI/profile and CLI link still unverified' | tee -a simulator-ci/boot.log
             kill "$PID" || true
           else
             echo 'Simulator process exited early; inspect logs' | tee -a simulator-ci/boot.log
