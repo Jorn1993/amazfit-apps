@@ -1,73 +1,42 @@
-# Buienradar · Amazfit Balance 2
+# Buienradar for Amazfit Balance 2
 
-**Release 0.9.4 · Zepp OS 3 · privéprototype**
+**1.0.0 · Zepp OS 3 · privéprototype**
 
-## Ontwerp (alle schermen als één systeem)
+## Radar: uitsluitend toekomstige beelden, zonder GitHub
 
-Het ontwerp is volledig opgebouwd voor een rond scherm van **480 × 480 px**, met een veilige zone voor interactie en leesbare typografie. De app heeft drie native horizontaal swipebare schermen:
+De radar toont een **+3 uur-neerslagvoorspelling van het Koninklijk Meteorologisch Instituut (KMI)**. We gebruiken bewust een andere kaartbron dan de lokale neerslagvoorspelling van Buienradar: de officiële Buienradar-voorspelling is wel als geanimeerde GIF beschikbaar, maar niet als afzonderlijke PNG's, en de Zepp Side Service kan die GIF niet rechtstreeks decoderen. KMI publiceert een reeks afzonderlijke PNG-overlays met echte toekomstige tijdstippen.
 
-1. **Radar**: schermvullende, automatisch bewegende Belgische Buienradar-animatie. De **werkelijke tijd uit ieder frame** wordt tijdens het verwerken naar een veilige, subtiele strook onderaan het ronde scherm verplaatst. Geen grote klok, onjuiste marker of permanente zoomknoppen. Draai aan de **kroon** om in of uit te zoomen (gecentreerd op de kaart, niet op een verzonnen GPS-punt).
-2. **Regen**: één status, één hoeveelheid en één grafiek voor 1 of 2 uur, afgeleid van exact dezelfde officiële 5-minuten-neerslagpunten. Geen niet-ondersteunde +3u of +5u voorspellingen.
-3. **Weer**: actuele temperatuur als hoofdwaarde, daaronder twee lichte infoblokken voor **regen komend uur** en wind. Geen dubbel weerlogo, zware kaartstapel, kleine technische teksten of instellingenicoon boven de temperatuur.
+De dataflow is **horloge ↔ Zepp op telefoon ↔ KMI**, zonder GitHub tijdens het gebruik. De telefoon haalt de KMI-tijdlijn en de gekozen PNG-overlays rechtstreeks op, zet de overlays om naar het Zepp-formaat en verstuurt ze via Bluetooth. De kaartachtergrond voor België zit in het installatiepakket. Een nieuwe reeks wordt tijdens het gebruik periodiek opgehaald.
 
-Op **elk scherm** opent een tik op de locatienaam de instellingen. Daar kies je via een **echte lijst van 12 locaties** (verdeeld over drie vlot swipebare pagina's) je plaats. De gekozen locatie wordt pas opgeslagen na bevestiging door de Zepp-telefoonservice.
+**Geen oude radar als fallback.** Alleen afbeeldingen met een tijdstip ná nu en met een recent ontvangen voorspelling mogen worden getoond. Een in de app opgeslagen, geldige reeks van minder dan 12 minuten oud kan direct bij het openen getoond worden. Zonder zo'n cache is de ondergrond zichtbaar terwijl de eerste PNG gedownload en via BLE doorgestuurd wordt; bij netwerkfouten blijft de overlay leeg, met een herhaalactie. Een *actuele* voorspelling bij een volledig koude start kan niet fysiek instant zijn.
 
-De aparte widget links van het horloge heeft **radar als hoofdinhoud**. De widget toont een **enkele compacte informatiecapsule bovenaan** met de gekozen locatie en actuele weersamenvatting. Daardoor is de originele Buienradar-frameklok **onderaan volledig leesbaar**; de capsule bedekt het radarbeeld niet op die plek. Als de lokale voorspelling verlopen is, wordt een oude temperatuur als *laatst bekend* aangeduid in plaats van de radar zelf foutief als niet actueel te bestempelen. Een tik op de capsule opent de app.
+De **tijd** onderaan is het voorspelde tijdstip van het zichtbare frame; niet de tijd waarop de foto werd gedownload. Dit is een toekomstvoorspelling, geen historische waarnemingsanimatie. De radar gebruikt het Belgische KMI-overzicht en de app staat voor KMI als bron vermeld, niet alsof Buienradar deze kaart levert.
 
-Na terugkeer van de hoofdapp gebruikt de widget `SecondaryWidget.onResume` om het gedeelde `LocalStorage`-momentbeeld opnieuw in te lezen. Het horloge kan in de widget geen nieuwe Bluetooth-opvraag starten: de weersamenvatting wordt alleen vernieuwd nadat de hoofdapp werkelijk data heeft opgehaald.
+**Belangrijk:** de KMI-app-API is niet publiek stabiel gedocumenteerd. De PNG-API en de mapuitlijning zijn op een echte server gecontroleerd, maar overdracht en daadwerkelijke frameweergave op een fysiek Balance 2 zijn nog niet bevestigd. De volledige beweging op het horloge werkt alleen zodra meer dan één frame via Bluetooth ontvangen is.
 
-## Automatische update
+## De andere schermen
 
-- De officiële GIF komt van Buienradar België, product \`RadarMapRainWebmercatorBE\`.
-- GitHub Actions verzamelt en valideert de frames elke 15 minuten, zonder eerdere beelden voor actuele data uit te geven.
-- Zes geverifieerde frames worden in de watch-app verpakt, zodat de animatie direct start.
-- Nieuwe frames worden alleen terwijl de app actief is via Zepp telefoonservice en BLE bijgewerkt.
-- De 2-uurs regenvoorspelling wordt elke 5 minuten opgehaald terwijl de hoofdapp open is.
-- De widget kan **niet zelfstandig** het internet via de telefoon raadplegen als de app niet actief is. Daardoor blijven de radarbeelden zichtbaar, maar verlopen de regenwaarden na acht minuten.
+- **Regen**: neerslagverwachting voor één of twee uur uit Buienradars officiële regenpunten voor de gekozen locatie, met een compacte grafiek.
+- **Weer**: actuele temperatuur, wind en neerslaghoeveelheid uit Buienradars metingen/regenpunten.
+- **Instellingen**: rechtstreeks op het horloge, inclusief locatie en optionele regenmeldingen. Geen losse Zepp-instellingenpagina.
+- **Widget links op het horloge**: dezelfde kaart met alleen een nog geldige toekomstige KMI-overlay uit de horlogecache; nooit een ingebouwde oude radarafbeelding.
 
-De officiële rasterdienst publiceert geen betrouwbaar gegeorefereerde hoekcoördinaten voor dit vaste radarbeeld. Daarom wordt er **geen onnauwkeurig geel locatiekader** meer getoond. Het optische inzoomen zoomt rond het beeldcentrum. Nauwkeurige puntlocatie kan pas na betrouwbare kaartgeoreferentie.
+De lokale neerslag en actuele weersinformatie blijven rechtstreeks bij **Buienradar** vandaan komen. De neerslagkaart is **KMI**. De widget kan het internet niet zelfstandig via de Zepp-telefoonservice vernieuwen; open de hoofdapp om nieuwe radarbeelden te halen.
 
-## Regenmelding op het horloge
+## Regenmeldingen
 
-In Instellingen staat een aan/uit-schakelaar en kun je 5, 15 of 30 minuten vooraf kiezen. Beide instellingen worden onmiddellijk lokaal bewaard, zonder extra knop OPSLAAN. Bij uitschakelen wordt een eventueel gepland alarm geannuleerd.
+Optioneel, met 5/15/30 minuten voorsprong. Een gepland alarm is gebaseerd op de laatst ontvangen Buienradar-regenverwachting. Dit is **geen constante weerscontrole in de achtergrond**. De testknop op het horloge stuurt een afzonderlijke Zepp-notificatie; een geslaagde build bewijst niet dat deze op het horloge afgeleverd is.
 
-Bij een verse voorspelling die regen aankondigt maakt de app één **persistente Zepp-alarmtaak**, die de notificatieservice kan activeren als de hoofdapp al afgesloten is. De sleutel van de voorspelde regenaanvang wordt opgeslagen om dubbele meldingen na heropenen te vermijden. Het tijdstip is gebaseerd op de bronvoorspelling, niet op de laatste weergave.
+## Installatie en distributie
 
-De knop **Test melding** gebruikt direct de gedocumenteerde Zepp-notificatie-API. Dat controleert de ontvangst op je eigen Balance 2; een geslaagde GitHub-build alleen bewijst niets over fysieke aflevering.
+[QR-code voor developer-installatie](public/install-qr.png) · [Versie-informatie](public/latest.json).
 
-**Beperking:** dit is géén continue achtergrondbewaking van de nieuwste regenvoorspelling. De alarmmelding is gebaseerd op de laatst opgehaalde gegevens. Zepp's AppService kan wel door een alarm worden gewekt, maar heeft beperkte toegang tot netwerkfuncties. We doen geen onbevestigde belofte over automatische controles wanneer de app gesloten is.
+GitHub wordt enkel gebruikt om de Zepp-app te **bouwen en als ZPK te verspreiden**. Geen GitHub-link, GH Actions, GitHub API of radar-cache is tijdens het draaien van de app nodig. Een nieuwe developer-build moet opnieuw geïnstalleerd worden; automatische ZPK-updates zijn niet beschikbaar.
 
-## Codekwaliteit
+### Bronnen en rechten
 
-Tests omvatten:
-- horizon-consistentie en stale-data-gedrag;
-- native swiper, schermgeometrie en grote touch targets;
-- correcte opslag van locatie en notificatievoorkeuren;
-- foutgevallen voor BLE-radaroverdracht;
-- planning, annulering en validatie van een regenmelding.
+- Radarlagen: KMI, via de mobiele \`getForecasts\`/\`getIncaImage\`-service van \`app.meteo.be\`. Deze reverse-engineerde API heeft geen gegarandeerde compatibiliteit, servicevoorwaarden of distributierecht.
+- Statische Belgische kaartachtergrond: \`be_black.png\` uit [jdejaegh/irm-kmi-ha](https://github.com/jdejaegh/irm-kmi-ha), MIT-licentie, copyright © 2023–2026 Jules Dejaeghere. [MIT-licentietekst](https://github.com/jdejaegh/irm-kmi-ha/blob/main/LICENSE).
+- Regenverwachting en weerdata: [Buienradar](https://www.buienradar.be/overbuienradar/weerdata-op-uw-website). Voor toepassingen in mobiele apps kunnen toestemming en bronvermelding vereist zijn.
 
-De echte Balance 2 kan visuele verschillen tonen met de mocks. Controleer daarom na installatie alle pagina's en gebruik de testmelding om fysieke ontvangst vast te stellen.
-
-[Buienradar — regels voor hergebruik van data](https://www.buienradar.be/overbuienradar/weerdata-op-uw-website). Buienradar geeft aan dat mobiele toepassing vooraf toestemming vereist, ook voor niet-commercieel gebruik. Dit is een onafhankelijk privéprototype; publiceer of verspreid het niet als officiële Buienradar-app.
-
-## Installatie
-
-Na de groene CI-build:
-- [Installatie-QR](public/install-qr.png)
-- [Versieoverzicht](public/latest.json)
-
-Nieuwe sideloaded developer-appversies moeten opnieuw met de QR worden geïnstalleerd.
-
-## Radar zonder GitHub — v0.9.4
-
-De **regenverwachting en actuele weerdata** worden rechtstreeks door de Zepp Side Service op je telefoon bij Buienradar opgehaald. De **radar heeft nu twee routes**:
-
-1. **Animatie (optioneel):** een 6-frame GIF die GitHub Actions omzet in PNG's. Deze cache kan verouderen wanneer GitHub de geplande workflow overslaat. De app weigert deze reeks als recent wanneer de manifestdatum meer dan 35 minuten oud is.
-2. **Rechtstreekse opname (fallback):** de Side Service haalt een PNG bij Buienradar via de gedocumenteerde Belgische afbeeldings-API, zet die met Zepp \`image.convert\` om en verstuurt ze via BLE. Hiervoor is **geen GitHub nodig**. De app probeert deze route zelfstandig op te starten en daarna iedere vijf minuten zolang ze open is. De opname is **niet geanimeerd** en de ophaaltijd is niet noodzakelijk identiek aan de radarwaarnemingstijd.
-
-Oude meegeleverde beelden worden niet meer als live geanimeerd; het horloge toont dan *VEROUDERDE RADAR*. Bij een directe statische afbeelding verschijnt *LOSSE OPNAME*. De widget probeert de laatst succesvol ontvangen afbeelding te gebruiken en toont anders *RADARARCHIEF*.
-
-**Beperkingen:** de daadwerkelijke HTTP-respons van Buienradar, PNG-conversie en aflevering op de Balance 2 kunnen niet volledig worden geverifieerd met GitHub-unit-tests. Controle op fysieke hardware is noodzakelijk. Rechtstreekse **volledige animatie** zonder een decoder / andere framebron is nog niet geïmplementeerd. Voor nieuwe appversies (ZPK) blijft GitHub het ontwikkel- en installatiekanaal.
-
-Bron: https://www.buienradar.be/overbuienradar/weerdata-op-uw-website
-
+Dit is een onafhankelijk prototype voor privégebruik. Het is niet officieel gelieerd aan Buienradar of KMI. Publicatie of verspreiding zonder toestemming van de betrokken dataleveranciers wordt niet aanbevolen.
