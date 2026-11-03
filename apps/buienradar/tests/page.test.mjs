@@ -88,7 +88,7 @@ test('Phone-converted frames form native moving radar with zero local TGA files'
  assert.equal(t.savedFiles.size,0);
  assert.equal(t.page.radarWidget.values.visible,true);
  assert.equal(t.page.radarFrames.length,3);
- assert.deepEqual(t.page.radarFrames.map(f=>f.frameIndex),[0,2,4]);
+ assert.deepEqual(Array.from(t.page.radarFrames,f=>f.frameIndex),[0,2,4]);
  assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[0].path);
  t.page.nextRadarFrame();
  assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[1].path);
@@ -227,7 +227,7 @@ test('Newer GIF forecast replaces previous generation without mixing frames',asy
  t.receive(Date.now(),4,1);
  assert.equal(t.page.radarFrames.length,1);
  t.receive(Date.now(),2,2);
- assert.deepEqual(t.page.radarFrames.map(f=>f.frameIndex),[0,2]);
+ assert.deepEqual(Array.from(t.page.radarFrames,f=>f.frameIndex),[0,2]);
  t.page.onDestroy();
 });
 test('Watch never imports or calls custom proprietary image encoder',()=>{
