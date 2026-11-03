@@ -93,16 +93,27 @@ jobs:
           version=json.loads((root/'app.json').read_text())['app']['version']['name']
           package=output/f'buienradar-v{version}.zpk'
           package.write_bytes(buf.getvalue())
-          link=f'zpkd1://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/{package.name}'
+          # The exact same QR payload can be re-used for every later release.
+          # Only the bytes at this stable ZPK path change on each build.
+          latest_package=output/'buienradar-latest.zpk'
+          latest_package.write_bytes(buf.getvalue())
+          stable_path='Jorn1993/amazfit-apps/main/apps/buienradar/public/'
+          link='zpkd1://raw.githubusercontent.com/'+stable_path+'buienradar-latest.zpk'
           (output/'install-url.txt').write_text(link+'\n')
           qrcode.make(link).save(output/'install-qr.png')
-          qrcode.make(link).save(output/f'install-qr-v{version}.png')
+          # Preserve each immutable versioned download and QR for diagnostics.
+          version_link='zpkd1://raw.githubusercontent.com/'+stable_path+package.name
+          qrcode.make(version_link).save(output/f'install-qr-v{version}.png')
+          package_base='https://raw.githubusercontent.com/'+stable_path
           (output/'latest.json').write_text(json.dumps({
               'version':version,'appId':1936821,
-              'packageUrl':f'https://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/{package.name}',
-              'installQrUrl':'https://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/install-qr.png'
+              'packageUrl':package_base+'buienradar-latest.zpk',
+              'versionedPackageUrl':package_base+package.name,
+              'installQrUrl':package_base+'install-qr.png'
           },separators=(',',':'))+'\n')
-          print('Developer app',version,len(buf.getvalue()),'bytes')
+          assert latest_package.read_bytes()==package.read_bytes()
+          assert 'v'+version not in link, 'QR must not be version-specific'
+          print('Developer app',version,len(buf.getvalue()),'bytes; permanent QR:',link)
           PY
       - name: Publish preview package and QR
         run: |

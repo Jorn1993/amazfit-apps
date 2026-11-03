@@ -35,7 +35,9 @@ Optioneel, met 5/15/30 minuten voorsprong. Een gepland alarm is gebaseerd op de 
 
 ## Installatie en distributie
 
-[QR-code voor developer-installatie](public/install-qr.png) · [Versie-informatie](public/latest.json).
+[Vaste QR-code voor alle versies](public/install-qr.png) · [Altijd nieuwste ZPK](public/buienradar-latest.zpk) · [Versie-informatie](public/latest.json).
+
+De QR-code bevat voortaan een **vaste URL** naar `buienradar-latest.zpk`. Nieuwe builds overschrijven dit bestand op dezelfde URL en bewaren daarnaast het genummerde pakket. De QR-inhoud verandert dus niet meer bij iedere nieuwe versie; opnieuw scannen blijft nodig om een developer-update te installeren. GitHub Raw kan het bestand kort cachen: gebruik bij vertraging de versiegebonden ZPK uit `latest.json`.
 
 GitHub wordt enkel gebruikt om de Zepp-app te **bouwen en als ZPK te verspreiden**. Geen GitHub-link, GH Actions, GitHub API of radar-cache is tijdens het draaien van de app nodig. Een nieuwe developer-build moet opnieuw geïnstalleerd worden; automatische ZPK-updates zijn niet beschikbaar.
 
