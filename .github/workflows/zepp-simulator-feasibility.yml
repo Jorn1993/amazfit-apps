@@ -65,34 +65,46 @@ jobs:
           sleep 14
           xdotool mousemove --sync 1115 132 click 1 || true
           sleep 5
-          # We found "Balance2", latest V1.1.0, 162MB in the real catalogue.
-          # A single 6-wheel-step scroll places it at x1097,y596.
+          # Exact model and position verified in prior redacted screenshots:
+          # Balance2, latest v1.1.0, OS 5.0, API 4.2.
           mkdir -p simulator-ci
           xdotool mousemove --sync 990 650 click --repeat 6 --delay 90 5
           sleep 3
-          scrot -z /tmp/balance2-before-download.png
           xdotool mousemove --sync 1097 596 click 1
-          sleep 12
-          scrot -z /tmp/balance2-after-12s.png
-          sleep 45
-          scrot -z /tmp/balance2-after-57s.png
-          sleep 65
-          scrot -z /tmp/balance2-after-122s.png
+          sleep 25
+          scrot -z /tmp/balance2-downloaded.png
+          # Close catalogue and select downloaded model in simulator toolbar.
+          xdotool mousemove --sync 1112 208 click 1
+          sleep 3
+          scrot -z /tmp/balance2-main-window.png
+          xdotool mousemove --sync 986 134 click 1
+          sleep 3
+          scrot -z /tmp/balance2-device-menu.png
+          xdotool type --clearmodifiers --delay 45 'Balance2'
+          xdotool key Return
+          sleep 3
+          scrot -z /tmp/balance2-device-selected.png
+          xdotool mousemove --sync 270 132 click 1
+          sleep 28
+          scrot -z /tmp/balance2-device-launch.png
+          # Only the screenshots with sensitive regions masked are uploaded.
           python3 - <<'PY'
           from PIL import Image,ImageDraw
-          from pathlib import Path
-          for name in ('before-download','after-12s','after-57s','after-122s'):
+          names=('downloaded','main-window','device-menu','device-selected','device-launch')
+          for name in names:
               im=Image.open('/tmp/balance2-'+name+'.png').convert('RGB')
               d=ImageDraw.Draw(im)
-              d.rectangle((0,0,1280,210),fill=(15,15,15))
-              d.rectangle((466,270,830,422),fill=(15,15,15))
+              d.rectangle((0,0,1280,90),fill=(15,15,15))
+              d.rectangle((115,90,225,195),fill=(15,15,15))
+              # Mask login form if the account session was not established.
+              d.rectangle((468,281,812,416),fill=(15,15,15))
               im.save('simulator-ci/balance2-'+name+'-redacted.png')
           PY
-          test -s simulator-ci/balance2-after-122s-redacted.png
+          test -s simulator-ci/balance2-device-launch-redacted.png
       - name: Upload redacted simulator status (no session data)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zepp-balance2-emulator-download
+          name: zepp-balance2-device-launch
           path: simulator-ci/balance2-*-redacted.png
           if-no-files-found: warn
