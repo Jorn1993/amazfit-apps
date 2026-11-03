@@ -3,117 +3,98 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-function create({download='success',convert='success',transfer='success'}={}){
- let service,downloaderUrl=null,transfers=0,conversions=0;
- const delays=new Set();
- const delayed=(fn,ms)=>{
-  const t=setTimeout(()=>{delays.delete(t);fn();},ms>500?15:ms);
-  delays.add(t);return t;
- };
- const clear=t=>{clearTimeout(t);delays.delete(t);};
- const req={onSuccess:null,onFail:null,cancel(){}};
- const network={downloader:{downloadFile(options){
-  downloaderUrl=options.url;
-  delayed(()=>{
-   if(download==='success')req.onSuccess?.({statusCode:200,filePath:'data://download/frame.png'});
-   else req.onFail?.({code:42,message:'download failed'});
-  },4);
-  return req;
- }}};
- const manifest={version:1,source:'Buienradar.nl',
-  product:'RadarMapRainWebmercatorBE',generatedAt:new Date().toISOString(),
-  frameCount:6,frames:Array.from({length:6},(_,i)=>'frame-'+i+'.png')};
- const image={convert:async()=>{
-  conversions++;
-  return convert==='success'||(convert==='fail-first'&&conversions>1)?
-   {targetFilePath:'data://download/converted.img'}:Promise.reject(Error('bad PNG'));
+function create({download=true,convert=true,transfer=true}={}){
+ let service,sourceUrl='',count=0;
+ const future=Date.now()+20*60000,validTime=new Date(future).toISOString();
+ const data={animation:[{sequence:[0,1,2,3].map((_,i)=>({
+  time:new Date(future+i*600000).toISOString(),
+  uri:'https://app.meteo.be/services/appv4/?s=getIncaImage&i='+i
+ }))}]};
+ const fetch=async({url})=>({status:200,body:data});
+ const downloader={downloadFile({url}){
+  sourceUrl=url;
+  const task={onSuccess:null,onFail:null,cancel(){}};
+  queueMicrotask(()=>{
+   if(download)task.onSuccess?.({statusCode:200,filePath:'data://download/future.png'});
+   else task.onFail?.({message:'no data'});
+  });
+  return task;
  }};
- const transferFile={getOutbox(){return {enqueueFile(_,params){
-  assert.ok(['buienradar-frame','buienradar-snapshot'].includes(params.kind));
-  transfers++;return {readyState:'pending',on(name,cb){
-   if(name==='change')delayed(()=>cb({data:{readyState:transfer==='success'?
-    'transferred':'error'}}),4);
+ const image={convert:async()=>convert?
+  {targetFilePath:'data://download/future.img'}:
+  Promise.reject(Error('unsupported'))};
+ const transferFile={getOutbox(){return {enqueueFile(_path,params){
+  assert.equal(params.kind,'future-radar-frame');
+  assert.equal(params.source,'KMI');
+  assert.ok(params.validAt>Date.now());
+  count++;
+  return {readyState:'pending',on(event,cb){
+   if(event==='change')queueMicrotask(()=>cb({
+    data:{readyState:transfer?'transferred':'error'}
+   }));
   },cancel(){}};
  }};}};
  const source=fs.readFileSync(new URL('../app-side/index.js',import.meta.url),'utf8')
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(source,{
-  AppSideService:v=>service=v,BaseSideService:v=>v,
-  parseRaintext:()=>[],describe:()=>({}),normalLocation:x=>x,REFRESH_MS:300000,
-  nearestStation:()=>null,nextHourRain:()=>0,
-  RADAR_CACHE_BASE:'https://raw.githubusercontent.com/Jorn1993/amazfit-apps/radar-cache/radar',
-  parseFrameManifest:x=>({...x,ok:true}),
-  frameUrl:n=>'https://raw.githubusercontent.com/Jorn1993/amazfit-apps/radar-cache/radar/'+n,
-  fetch:async ({url})=>url.includes('manifest')?{status:200,body:manifest}:{status:404},
+  AppSideService:x=>service=x,BaseSideService:x=>x,
+  parseRaintext:()=>[],describe:()=>({}),normalLocation:x=>x,
+  REFRESH_MS:300000,nearestStation:()=>null,nextHourRain:()=>0,
+  kmiForecastUrl:()=> 'https://app.meteo.be/services/appv4/?s=getForecasts',
+  parseFutureFrames:()=>data.animation[0].sequence.map(x=>({
+   time:x.time,uri:x.uri,validAt:Date.parse(x.time)
+  })),
   settings:{settingsStorage:{getItem:()=>null}},
-  network,image,transferFile,
-  setTimeout:delayed,clearTimeout:clear,
-  Date,Math,Error,Number,String,JSON,Promise,console:{log(){}}
+  fetch,network:{downloader},image,transferFile,
+  Date,Math,Number,String,JSON,Promise,Error,Array,
+  setTimeout,clearTimeout,console:{log(){}}
  });
- const call=method=>new Promise(done=>service.onRequest({method,
-  params:method==='radar.frame'?{index:0}:{}},(_,response)=>done(response)));
- return {call,getUrl:()=>downloaderUrl,count:()=>transfers,
-  cleanup:()=>{for(const d of delays)clearTimeout(d);}};
+ const call=(method,params={})=>new Promise(resolve=>
+  service.onRequest({method,params},(_,answer)=>resolve(answer)));
+ return {call,sourceUrl:()=>sourceUrl,count:()=>count};
 }
-const settle=()=>new Promise(resolve=>setTimeout(resolve,65));
-test('Latest verified official animation manifest is fetched',async()=>{
- const sim=create();try{
-  const result=await sim.call('radar.manifest');
-  assert.equal(result.ok,true);
-  assert.equal(result.frameCount,6);
- }finally{sim.cleanup();}
+const settle=async()=>{
+ for(let i=0;i<20;i++)await Promise.resolve();
+ await new Promise(resolve=>setTimeout(resolve,15));
+};
+test('Phone retrieves future-verified KMI PNG forecast metadata directly',async()=>{
+ const s=create(),r=await s.call('radar.forecast');
+ assert.equal(r.ok,true);
+ assert.equal(r.source,'KMI');
+ assert.equal(r.frameCount,4);
+ assert.ok(r.frames.every(f=>f.validAt>Date.now()));
 });
-test('Individual PNG frames are converted and transferred',async()=>{
- const sim=create();try{
-  await sim.call('radar.manifest');
-  assert.equal((await sim.call('radar.frame')).ok,true);
-  await settle();
-  assert.match(sim.getUrl(),/radar-cache\/radar\/frame-0\.png/);
-  assert.equal((await sim.call('radar.status')).stage,'transferred');
-  assert.equal(sim.count(),1);
- }finally{sim.cleanup();}
+test('Forecast frame is converted and sent by BLE without GitHub',async()=>{
+ const s=create();await s.call('radar.forecast');
+ assert.equal((await s.call('radar.frame',{index:0})).ok,true);
+ await settle();
+ assert.match(s.sourceUrl(),/^https:\/\/app\.meteo\.be\/services\/appv4\//);
+ assert.equal((await s.call('radar.status')).stage,'transferred');
+ assert.equal(s.count(),1);
 });
-test('Broken image conversion shows a specific failure stage',async()=>{
- const sim=create({convert:'fail'});try{
-  await sim.call('radar.manifest');await sim.call('radar.frame');await settle();
-  const state=await sim.call('radar.status');
-  assert.equal(state.stage,'failed');assert.match(state.error,/CONVERT/);
- }finally{sim.cleanup();}
+test('Failed download never transfers a nonexistent future frame',async()=>{
+ const s=create({download:false});await s.call('radar.forecast');
+ await s.call('radar.frame',{index:0});await settle();
+ const r=await s.call('radar.status');
+ assert.equal(r.stage,'failed');assert.match(r.error,/DOWNLOAD/);
+ assert.equal(s.count(),0);
 });
-test('Bluetooth failure is reported rather than showing unverified success',async()=>{
- const sim=create({transfer:'fail'});try{
-  await sim.call('radar.manifest');await sim.call('radar.frame');await settle();
-  const state=await sim.call('radar.status');
-  assert.equal(state.stage,'failed');assert.match(state.error,/TRANSFER/);
- }finally{sim.cleanup();}
+test('Failed PNG conversion is reported',async()=>{
+ const s=create({convert:false});await s.call('radar.forecast');
+ await s.call('radar.frame',{index:0});await settle();
+ assert.match((await s.call('radar.status')).error,/unsupported/);
 });
-test('Failed network download does not enqueue a blank frame',async()=>{
- const sim=create({download:'fail'});try{
-  await sim.call('radar.manifest');await sim.call('radar.frame');await settle();
-  const state=await sim.call('radar.status');
-  assert.equal(state.stage,'failed');assert.match(state.error,/DOWNLOAD/);
-  assert.equal(sim.count(),0);
- }finally{sim.cleanup();}
+test('Failed BLE transfer is reported instead of claiming success',async()=>{
+ const s=create({transfer:false});await s.call('radar.forecast');
+ await s.call('radar.frame',{index:0});await settle();
+ assert.match((await s.call('radar.status')).error,/TRANSFER/);
 });
-
-test('Current official PNG snapshot downloads and transfers without GitHub cache',async()=>{
- const sim=create();try{
-  const result=await sim.call('radar.snapshot');
-  assert.equal(result.ok,true);
-  await settle();
-  assert.match(sim.getUrl(),/image\.buienradar\.nl\/2\.0\/image\/single\//);
-  assert.equal((await sim.call('radar.status')).stage,'transferred');
-  assert.equal(sim.count(),1);
- }finally{sim.cleanup();}
+test('No past or unknown frame index may start a transfer',async()=>{
+ const s=create();await s.call('radar.forecast');
+ assert.equal((await s.call('radar.frame',{index:99})).ok,false);
+ assert.equal(s.count(),0);
 });
-
-test('Two direct single-image PNG sources are tried when the first cannot convert',async()=>{
- const sim=create({convert:'fail-first'});
- try{
-  assert.equal((await sim.call('radar.snapshot')).ok,true);
-  await settle();
-  assert.equal((await sim.call('radar.status')).stage,'transferred');
-  assert.match(sim.getUrl(),/image\/single\/RadarMapRainBE/);
-  assert.equal(sim.count(),1);
- }finally{sim.cleanup();}
+test('Source code never uses a GitHub runtime radar cache',()=>{
+ const src=fs.readFileSync(new URL('../app-side/index.js',import.meta.url),'utf8');
+ assert.ok(!/raw\.githubusercontent\.com|RADAR_CACHE_BASE|radar\.manifest/.test(src));
 });
