@@ -39,7 +39,8 @@ function preview(now=Date.now()){
   status.state==='incoming'&&Number.isFinite(status.etaMinutes)?
    'Regen over '+status.etaMinutes+'m':'');
  let time='KMI +3u';
- if(frame)time=new Date(frame.validAt).toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'});
+ if(frame)time=String(new Date(frame.validAt).getHours()).padStart(2,'0')+':'+
+  String(new Date(frame.validAt).getMinutes()).padStart(2,'0');
  return {frame,title:text.slice(0,32),time};
 }
 SecondaryWidget({

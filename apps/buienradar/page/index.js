@@ -478,9 +478,11 @@ Page(BasePage({
    ...geometry,src:frame?.path||'kmi-clear.png'
   });
   if(this.radarTime){
-   const clock=frame?new Date(frame.validAt).toLocaleTimeString('nl-BE',{
-    hour:'2-digit',minute:'2-digit'
-   }):'KMI +3u';
+   const clock=frame?(() => {
+    const t=new Date(frame.validAt);
+    return String(t.getHours()).padStart(2,'0')+':'+
+      String(t.getMinutes()).padStart(2,'0');
+   })():'KMI +3u';
    this.radarTime.setProperty(ui.prop.TEXT,clock);
   }
  },
