@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 function launch(cached=null){
  let component;const widgets=[],paths=[],cache=new Map();
- if(cached)cache.set('buienradar.animation.v2',JSON.stringify(cached));
+ if(cached)cache.set('buienradar.animation.v3',JSON.stringify(cached));
  const ui={widget:{IMG:1,TEXT:2,FILL_RECT:3,BUTTON:4},
   prop:{TEXT:'text',MORE:'more',VISIBLE:'visible'},align:{CENTER_H:1},
   text_style:{ELLIPSIS:1},
@@ -44,7 +44,7 @@ test('Expired radar cache never appears as current',()=>{
 });
 test('Widget refreshes after returning from main app',()=>{
  const t=launch();
- t.cache.set('buienradar.animation.v2',JSON.stringify({
+ t.cache.set('buienradar.animation.v3',JSON.stringify({
   source:'Buienradar',horizonMinutes:180,fetchedAt:Date.now(),
   frames:[{path:'data://new.png'}]
  }));
