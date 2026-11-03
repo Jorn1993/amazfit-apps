@@ -9,7 +9,12 @@ const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
 // Official current single-image endpoint; independent of GitHub cron.
 // Use when the verified animated feed is missing or older than 35 minutes.
 // renderText=False: the single image has no misleading historical time label.
-const RADAR_SINGLE='https://image.buienradar.nl/2.0/image/single/RadarMapRainWebmercatorBE'+
+// The Belgium Buienradar documentation explicitly publishes PNG via the
+// /image/animation endpoint. The /image/single variant is a compatibility
+// backup if that PNG resource cannot be converted by Zepp.
+const RADAR_SINGLE='https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE'+
+ '?height=320&width=320&extension=png&renderBackground=True&renderBranding=False&renderText=False';
+const RADAR_SINGLE_BACKUP='https://image.buienradar.nl/2.0/image/single/RadarMapRainWebmercatorBE'+
  '?height=320&width=320&renderBackground=True&renderBranding=False&renderText=False';
 
 let rainCache=null,weatherCache=null;
@@ -132,17 +137,23 @@ async function sendFrame(index,id,snapshot=null){
  try{
   const file=snapshot?null:radarManifest.frames[index];
   updateRadar('download',null,id,index);
-  const url=snapshot?RADAR_SINGLE+'&checked='+Math.floor(Date.now()/300000):
-   frameUrl(file)+'?version='+encodeURIComponent(radarManifest.generatedAt);
-  const raw=await downloadFrame(url,index,id);
-  updateRadar('convert',null,id,index);
-  if(typeof image==='undefined'||typeof image.convert!=='function')
-   throw Error('CONVERT: Zepp image converter ontbreekt');
-  let converted;
-  try{
-   converted=await bounded(image.convert({filePath:raw}),15000,'CONVERT');
-  }catch(e){throw Error('CONVERT: '+String(e&&e.message||e).slice(0,70));}
-  if(!converted?.targetFilePath)throw Error('CONVERT: geen uitvoer');
+  const urls=snapshot?[
+   RADAR_SINGLE+'&checked='+Math.floor(Date.now()/300000),
+   RADAR_SINGLE_BACKUP+'&checked='+Math.floor(Date.now()/300000)
+  ]:[frameUrl(file)+'?version='+encodeURIComponent(radarManifest.generatedAt)];
+  let converted=null,lastError=null;
+  for(const url of urls){
+   try{
+    const raw=await downloadFrame(url,index,id);
+    updateRadar('convert',null,id,index);
+    if(typeof image==='undefined'||typeof image.convert!=='function')
+     throw Error('CONVERT: Zepp image converter ontbreekt');
+    converted=await bounded(image.convert({filePath:raw}),15000,'CONVERT');
+    if(converted?.targetFilePath)break;
+   }catch(e){lastError=e;converted=null;}
+  }
+  if(!converted?.targetFilePath)
+   throw Error(String(lastError&&lastError.message||'RADAR: geen PNG'));
   updateRadar('transfer',null,id,index);
   if(typeof transferFile==='undefined'||typeof transferFile.getOutbox!=='function')
    throw Error('TRANSFER: Zepp Side Service ontbreekt');
