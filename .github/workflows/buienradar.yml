@@ -44,7 +44,7 @@ jobs:
           node --test apps/buienradar/tests/*.test.mjs
       - name: Generate Buienradar assets and build native Zepp app
         run: |
-          python -m pip install --quiet pillow
+          python -m pip install --quiet pillow requests
           # Genuine animated Buienradar GIF arrives directly at runtime.
           node apps/buienradar/prepare-assets.mjs
           python apps/buienradar/tools/generate_branding.py
