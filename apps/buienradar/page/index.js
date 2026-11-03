@@ -5,6 +5,9 @@ import {push} from '@zos/router';
 import {onDigitalCrown,offDigitalCrown,KEY_HOME} from '@zos/interaction';
 import {set as setAlarm, cancel as cancelAlarm} from '@zos/alarm';
 import {BasePage} from '@zeppos/zml/base-page';
+import {readFileSync} from '@zos/fs';
+import {BuienradarGif} from './gif-decoder.js';
+import {sampleRadar,radarDeltaRects,toCanvasRect} from './radar-canvas.js';
 
 // Native horizontal swipe. Each screen is its own 480x480 VIEW_CONTAINER.
 // No gesture interception or abrupt visibility switching.
@@ -61,6 +64,10 @@ Page(BasePage({
   this.radarSyncing=false;this.radarError=null;this.radarEpoch=0;
   this.radarDisplayed=false;this.radarRequestAt=0;this.statusTicks=0;
   this.radarStage='idle';this.currentFrame=null;this.currentFetchedAt=0;
+  this.radarGifAt=0;this.radarCanvasFrames=[];this.radarWrapRects=[];
+  this.radarAnimationEpoch=0;this.radarPaintEpoch=0;
+  this.radarPainting=false;this.radarCanvasVisible=false;
+  this.radarFrameIndex=0;this.radarDecodeError=null;
   this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];this.cityLabels=[];this.lastCrown=0;
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
@@ -115,6 +122,11 @@ Page(BasePage({
    x:0,y:0,w:SIZE,h:SIZE,src:'weather-cloud.png',auto_scale:true
   });
   this.radarWidget.setProperty(ui.prop.VISIBLE,false);
+  // Source GIF is decoded to genuine RGB on the watch. The official Zepp
+  // CANVAS API draws those pixels; unlike the previous guessed TGA header,
+  // this requires NO proprietary format conversion.
+  this.radarCanvas=create(0,ui.widget.CANVAS,{x:0,y:0,w:SIZE,h:SIZE});
+  this.radarCanvas.setProperty(ui.prop.VISIBLE,false);
   this.city=cityButton(0);
   rect(0,122,396,236,39,0x071a28,19);
   this.radarTime=txt(0,133,402,214,29,'BUIENRADAR · +3U',19,C.white);
@@ -209,6 +221,17 @@ Page(BasePage({
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
   // Refresh a genuine current image every 5m; never display after 8m.
   this.radarTimer=setInterval(()=>{void this.requestRadar();},60000);
+  // Restore only a very recent genuine GIF. Never resurrect old native-TGA
+  // caches, which produced colour noise in previous releases.
+  try{
+   const previous=JSON.parse(storage.getItem('buienradar.gif.v1')||'null');
+   const age=Date.now()-previous?.fetchedAt;
+   if(previous?.source==='Buienradar'&&
+      typeof previous.path==='string'&&previous.path.startsWith('data://')&&
+      age>=0&&age<8*60000){
+    this.prepareFutureRadar(previous.path,previous.fetchedAt);
+   }
+  }catch(_){}
   void this.requestRadar();
   void this.readLocation();
   void this.refresh();
@@ -223,8 +246,11 @@ Page(BasePage({
  onReceivedFile(file){
   // The Zepp BasePage ZML callback receives files converted using the
   // official phone-side convertLib. No second TransferFile inbox.
-  if(this.disposed||file?.params?.source!=='Buienradar'||
-     file.params.kind!=='buienradar-current-frame')return;
+  if(this.disposed||file?.params?.source!=='Buienradar')return;
+  if(file.params.kind==='buienradar-forecast-gif'){
+   this.receiveFutureRadar(file);return;
+  }
+  if(file.params.kind!=='buienradar-current-frame')return;
   const fetchedAt=Number(file.params.fetchedAt),now=Date.now();
   if(!Number.isFinite(fetchedAt)||fetchedAt>now+60000||
      now-fetchedAt>8*60000)return;
@@ -259,6 +285,133 @@ Page(BasePage({
   if(typeof file.on==='function')file.on('change',e=>
    finish(e?.data?.readyState||file.readyState));
   finish(file.readyState);
+ },
+ receiveFutureRadar(file){
+  const fetchedAt=Number(file.params.fetchedAt),now=Date.now();
+  if(!Number.isFinite(fetchedAt)||fetchedAt>now+60000||
+     now-fetchedAt>=8*60000)return;
+  const id='gif:'+String(file.sessionId??file.fileName??file.filePath??fetchedAt);
+  if(this.incomingRadarFiles[id])return;
+  this.incomingRadarFiles[id]=true;
+  const complete=stage=>{
+   if(this.disposed||!this.incomingRadarFiles[id])return;
+   const status=stage||file.readyState;
+   if(status==='error'||status==='canceled'){
+    delete this.incomingRadarFiles[id];
+    this.radarDecodeError='ANIMATIE: overdracht mislukt';
+    this.updateRadarLabel();return;
+   }
+   if(status!=='transferred')return;
+   delete this.incomingRadarFiles[id];
+   if(!file.filePath){
+    this.radarDecodeError='ANIMATIE: bestandspad ontbreekt';
+    this.updateRadarLabel();return;
+   }
+   try{storage.setItem('buienradar.gif.v1',JSON.stringify({
+    source:'Buienradar',path:file.filePath,fetchedAt
+   }));}catch(_){}
+   this.prepareFutureRadar(file.filePath,fetchedAt);
+  };
+  if(typeof file.on==='function')file.on('change',e=>
+   complete(e?.data?.readyState||file.readyState));
+  complete(file.readyState);
+ },
+ prepareFutureRadar(path,fetchedAt){
+  if(this.disposed||!Number.isFinite(fetchedAt)||
+     Date.now()-fetchedAt>=8*60000||fetchedAt<this.radarGifAt)return;
+  const epoch=++this.radarAnimationEpoch;
+  let reader;
+  try{
+   const bytes=readFileSync({path});
+   reader=new BuienradarGif(bytes);
+   if(reader.width!==320||reader.height!==320)
+    throw Error('radarformaat onverwacht');
+  }catch(e){
+   this.radarDecodeError='ANIMATIE: '+String(e?.message||e).slice(0,60);
+   this.updateRadarLabel();return;
+  }
+  const frames=[];let index=0,previousPixels=null;
+  const decodeNext=()=>{
+   if(this.disposed||epoch!==this.radarAnimationEpoch)return;
+   try{
+    const frame=reader.nextFrame();
+    if(!frame){
+     if(frames.length<2)throw Error('te weinig toekomstige beelden');
+     const first=frames[0],last=frames[frames.length-1];
+     const wrap=radarDeltaRects(first.pixels,last.pixels,
+      first.width,first.height);
+     this.radarCanvasFrames=frames;
+     this.radarWrapRects=wrap;
+     this.radarGifAt=fetchedAt;
+     this.radarFrameIndex=0;
+     this.radarDecodeError=null;
+     void this.paintRadarRects(first.rects,true,0);
+     return;
+    }
+    // The real Buienradar GIF returns up to 17 images. Every second one
+    // is selected so the BLE/watch animation keeps a modest CPU footprint.
+    if(index%2===0){
+     const sampled=sampleRadar(frame.rgb,frame.width,frame.height,3);
+     const rects=radarDeltaRects(sampled.pixels,previousPixels,
+      sampled.width,sampled.height);
+     frames.push({...sampled,rects});
+     previousPixels=sampled.pixels;
+    }
+    index++;
+    if(index>24)throw Error('te veel beelden');
+    setTimeout(decodeNext,15);
+   }catch(e){
+    this.radarDecodeError='ANIMATIE: '+String(e?.message||e).slice(0,60);
+    this.updateRadarLabel();
+   }
+  };
+  setTimeout(decodeNext,15);
+ },
+ hasForecastRadar(now=Date.now()){
+  return !!(this.radarCanvasVisible&&this.radarCanvasFrames.length>=2&&
+   now>=this.radarGifAt&&now-this.radarGifAt<8*60000);
+ },
+ async paintRadarRects(rects,initial=false,nextIndex=0){
+  if(this.disposed||!this.radarCanvas)return false;
+  const paint=++this.radarPaintEpoch;
+  this.radarPainting=true;
+  if(initial){
+   try{this.radarCanvas.clear({x:0,y:0,w:SIZE,h:SIZE});}
+   catch(e){this.radarPainting=false;this.radarDecodeError='CANVAS: clear';return false;}
+  }
+  const frame=this.radarCanvasFrames[nextIndex];
+  if(!frame)return false;
+  const zoom=this.zoom||1;
+  let offset=0;
+  return new Promise(resolve=>{
+   const batch=()=>{
+    if(this.disposed||paint!==this.radarPaintEpoch){
+     this.radarPainting=false;resolve(false);return;
+    }
+    try{
+     const end=Math.min(offset+220,rects.length);
+     for(let i=offset;i<end;i++){
+      const args=toCanvasRect(rects[i],frame.width,frame.height,SIZE,zoom);
+      if(args)this.radarCanvas.drawRect(args);
+     }
+     offset=end;
+     if(offset<rects.length){setTimeout(batch,15);return;}
+     this.radarPainting=false;this.radarCanvasVisible=true;
+     this.radarFrameIndex=nextIndex;
+     this.radarCanvas.setProperty(ui.prop.VISIBLE,true);
+     this.radarWidget.setProperty(ui.prop.VISIBLE,false);
+     this.updateRadarLabel();
+     resolve(true);
+    }catch(e){
+     this.radarPainting=false;this.radarCanvasVisible=false;
+     this.radarDecodeError='CANVAS: '+String(e?.message||e).slice(0,55);
+     this.radarCanvas.setProperty(ui.prop.VISIBLE,false);
+     this.applyRadarFrame();
+     resolve(false);
+    }
+   };
+   batch();
+  });
  },
  hasCurrentRadar(now=Date.now()){
   return !!(this.currentFrame?.path&&Number.isFinite(this.currentFetchedAt)&&
