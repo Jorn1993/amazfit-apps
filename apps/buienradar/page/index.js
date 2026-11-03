@@ -321,7 +321,9 @@ Page(BasePage({
  },
  async requestRadar(force=false){
   if(this.disposed||this.radarSyncing)return;
-  if(!force&&this.isRadarFresh()&&this.radarFrames.filter(Boolean).length>=5)return;
+  // A valid cached future frame is immediately usable: never clear it
+  // on startup while fetching a replacement in the background.
+  if(!force&&this.isRadarFresh()&&this.radarFrames.some(Boolean))return;
   this.radarSyncing=true;this.radarError=null;this.updateRadarLabel();
   try{
    const answer=await this.phone({method:'radar.forecast'},17000);
