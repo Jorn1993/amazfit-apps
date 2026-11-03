@@ -10,6 +10,9 @@ const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
 const BUIENRADAR_CURRENT='https://image.buienradar.nl/2.0/image/single/'+
  'RadarMapRainBE?width=320&height=320&renderBackground=True'+
  '&renderBranding=False&renderText=False';
+const BUIENRADAR_FORECAST='https://image.buienradar.nl/2.0/image/animation/'+
+ 'RadarMapRainWebmercatorBE?width=320&height=320&renderBackground=True'+
+ '&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1';
 
 let rainCache=null,weatherCache=null;
 function responseBody(result){
@@ -125,7 +128,10 @@ function sendRadar(context,path,params){
  }),65000,'BLUETOOTH');
 }
 async function deliverCurrent(context,generation){
+ let sentCurrent=false;
+ let staticFailure=null;
  try{
+  // First: native, hardware-proven fullscreen current image.
   radarProgress('download');
   const path='data://download/buienradar-current-'+generation+'.png';
   const src=await downloadBuienradar(context,
@@ -133,10 +139,8 @@ async function deliverCurrent(context,generation){
   radarProgress('convert');
   const native=await limited(convertLib.convert({filePath:src}),
    30000,'CONVERT');
-  if(!native?.targetFilePath)
-   throw Error('CONVERT: geen native bestand');
-  if(native.options?.size!==undefined&&
-     Number(native.options.size)<=0)
+  if(!native?.targetFilePath)throw Error('CONVERT: geen native bestand');
+  if(native.options?.size!==undefined&&Number(native.options.size)<=0)
    throw Error('CONVERT: leeg bestand');
   radarProgress('transfer');
   const fetchedAt=Date.now();
@@ -144,10 +148,31 @@ async function deliverCurrent(context,generation){
    kind:'buienradar-current-frame',source:'Buienradar',
    generation,fetchedAt
   });
-  radarProgress('transferred');
-  radarState.lastFetchedAt=fetchedAt;
+  sentCurrent=true;radarState.lastFetchedAt=fetchedAt;
+  radarProgress('current-ready');
  }catch(e){
-  radarProgress('failed',String(e?.message||e).slice(0,125));
+  staticFailure=String(e?.message||e).slice(0,100);
+  radarState.staticError=staticFailure;
+ }
+ try{
+  // Next: transfer the ORIGINAL Buienradar future-GIF unmodified.
+  // The watch decodes GIF and paints the verified RGB pixels using its
+  // documented Canvas API. There is NO invented phone-side filesystem.
+  radarProgress('gif-download');
+  const gifPath=await downloadBuienradar(context,
+   BUIENRADAR_FORECAST+'&fresh='+Math.floor(Date.now()/300000),
+   'data://download/buienradar-future-'+generation+'.gif');
+  radarProgress('gif-transfer');
+  await sendRadar(context,gifPath,{
+   kind:'buienradar-forecast-gif',source:'Buienradar',
+   fetchedAt:Date.now(),requestedHorizonMinutes:180,generation
+  });
+  radarProgress('transferred');
+ }catch(e){
+  const error=String(e?.message||e).slice(0,125);
+  radarState.gifError=error;
+  radarProgress(sentCurrent?'current-only':'failed',
+   sentCurrent?null:(staticFailure?staticFailure+'; ':'')+error);
  }finally{radarBusy=false;}
 }
 function beginRadar(context){
@@ -156,7 +181,7 @@ function beginRadar(context){
  const generation=++radarGeneration;
  radarProgress('starting');
  void deliverCurrent(context,generation);
- return {ok:true,source:'Buienradar',mode:'current',generation};
+ return {ok:true,source:'Buienradar',mode:'current+forecast',generation};
 }
 AppSideService(BaseSideService({
  async onRequest(req,res){
