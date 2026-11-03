@@ -5,8 +5,8 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "1.1.0",
-      "code": 22
+      "name": "1.1.1",
+      "code": 23
     },
     "vender": "Personal prototype",
     "description": "Genuine Buienradar Belgium +3h forecast animation with native watch GIF decoding",

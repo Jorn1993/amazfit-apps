@@ -1,7 +1,7 @@
 name: Buienradar native GIF decoder verification
 on:
   push:
-    branches: ['feature/buienradar-native-gif']
+    branches: ['feature/buienradar-native-gif', 'fix/buienradar-fullscreen-visible-radar']
     paths:
       - 'apps/buienradar/**'
       - '.github/workflows/buienradar-native-gif.yml'

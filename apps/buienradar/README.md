@@ -1,12 +1,16 @@
 # Buienradar · Amazfit Balance 2
 
-**1.1.0 — native Zepp OS-app met echte Buienradar-animatie (privéprototype)**
+**1.1.1 — schermvullende Buienradar met actuele beeldstart en toekomstige animatie (privéprototype)**
 
 ## Radar
 De +3 uur-radar komt **uitsluitend van Buienradar België**, via
 `https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1`.
 
-De bestaande Zepp-telefoonservice downloadt de officiële GIF rechtstreeks bij Buienradar en draagt het GIF-bestand **ongewijzigd via Bluetooth** over naar de Balance 2. Op het horloge leest een GIF/LZW-decoder de geanimeerde frames en schrijft elk frame weg als Zepp-compatibele, paletgebaseerde TGA/SOMH-afbeelding. De radar wisselt de frames af op het scherm. **Geen KMI, GitHub tijdens gebruik, externe afbeeldingsconverter of aparte Android-app.**
+Vanaf 1.1.1 haalt de Zepp-telefoonservice **eerst een echte actuele Belgische Buienradar-PNG** op (`RadarMapRainBE`) en zet die met de officiële `image.convert` om. Zo kan de 480×480-radarkaart al zichtbaar worden voordat de grotere animatie via Bluetooth is aangekomen. Dit beeld wordt expliciet **ACTUEEL** genoemd en nooit als toekomstvoorspelling voorgesteld. De reden van een mislukte download, conversie of overdracht verschijnt op het radarscherm; het laden mag niet eindeloos onverklaard duren.
+
+De kaart op de hoofdapp en secundaire widget is nu volledig **480×480, rand-tot-rand**. Alleen compacte locatie- en tijdsaanduidingen liggen bovenop de kaart, niet ernaast.
+
+Daarna downloadt de bestaande Zepp-telefoonservice de officiële GIF rechtstreeks bij Buienradar en draagt het GIF-bestand **ongewijzigd via Bluetooth** over naar de Balance 2. Op het horloge leest een GIF/LZW-decoder de geanimeerde frames en schrijft elk frame weg als Zepp-compatibele, paletgebaseerde TGA/SOMH-afbeelding. De radar wisselt de frames af op het scherm. **Geen KMI, GitHub tijdens gebruik, externe afbeeldingsconverter of aparte Android-app.**
 
 Buienradar levert zelf de tijdsaanduidingen binnen de GIF (`renderText=True`). De app verzint geen voorspellingstijden. Een recent ontvangen reeks blijft tot maximaal 12 minuten beschikbaar en de app vraagt na circa 8 minuten nieuwe gegevens op. Onbetrouwbare, mislukte of verlopen bronnen worden als fout getoond in plaats van een oude radar. Widget toont het eerste recente frame als preview; de volledige animatie loopt in de hoofdapp.
 

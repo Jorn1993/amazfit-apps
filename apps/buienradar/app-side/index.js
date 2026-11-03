@@ -138,7 +138,7 @@ async function deliverBuienradarGif(generation){
    if(!image?.convert)throw Error('CONVERT: niet beschikbaar');
    radarProgress('snapshot-convert');
    const native=await limited(image.convert({
-    filePath:png,targetFilePath:'data://download/buienradar-current-'+generation+'.img'
+    filePath:png,targetFilePath:'data://download/buienradar-current-'+generation+'-native.png'
    }),22000,'CONVERT');
    if(!native?.targetFilePath)throw Error('CONVERT: geen afbeelding');
    radarProgress('snapshot-transfer');

@@ -25,7 +25,7 @@ function create({download=true,convert=true,transfer=true}={}){
    assert.equal(params.horizonMinutes,180);
   }else{
    assert.equal(params.kind,'buienradar-current-frame');
-   assert.match(path,/\.img$/);
+   assert.match(path,/-native\.png$/);
   }
   return {readyState:'pending',on(event,cb){
    if(event==='change')queueMicrotask(()=>cb({
