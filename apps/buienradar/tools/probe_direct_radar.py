@@ -64,5 +64,42 @@ def main():
         except Exception as ex:
             print(f"FUTURE_PROBE[{name}]: ERROR={str(ex)[:120]}",flush=True)
 
+
+    # KMI Belgium publishes per-frame PNG nowcasts in its app API.  Probe
+    # metadata and an arbitrary forecast frame to determine if it is usable
+    # as a no-GitHub fallback. Its undocumented endpoint may change.
+    try:
+        import datetime
+        dt=datetime.datetime.now(datetime.timezone.utc).strftime("%d/%m/%Y")
+        digest=hashlib.md5(("r9EnW374jkJ9acc;getForecasts;"+dt).encode()).hexdigest()
+        base="https://app.meteo.be/services/appv4/"
+        r=requests.get(base,params={"s":"getForecasts","lat":51.2194,
+                        "long":4.4025,"l":"nl","k":digest},timeout=18,
+                       headers={"User-Agent":"Buienradar-Balance2-Research/1.0"})
+        r.raise_for_status()
+        data=r.json()
+        seq=[x for a in data.get("animation",[]) if isinstance(a,dict)
+             for x in a.get("sequence",[]) if isinstance(x,dict)]
+        if not seq and isinstance(data.get("animation"),dict):
+            seq=data["animation"].get("sequence",[])
+        now=datetime.datetime.now(datetime.timezone.utc)
+        ahead=[]
+        for x in seq:
+            try:
+                future=datetime.datetime.fromisoformat(x["time"])>now
+                if future:ahead.append(x)
+            except Exception:pass
+        print(f"KMI_FORECAST_METADATA: keys={list(data)[:8]}, "
+              f"total={len(seq)}, future={len(ahead)}, first={seq[0].get('time') if seq else None}, "
+              f"last={seq[-1].get('time') if seq else None}",flush=True)
+        if ahead:
+            sample=requests.get(ahead[0]["uri"],timeout=15)
+            sample.raise_for_status()
+            img=Image.open(io.BytesIO(sample.content))
+            print(f"KMI_FORECAST_FRAME: {img.format}, {img.size}, "
+                  f"status={sample.status_code}, bytes={len(sample.content)}",flush=True)
+    except Exception as ex:
+        print(f"KMI_FORECAST_ERROR: {str(ex)[:220]}",flush=True)
+
 if __name__=="__main__":
     main()
