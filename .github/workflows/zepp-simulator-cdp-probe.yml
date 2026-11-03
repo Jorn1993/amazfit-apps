@@ -1,0 +1,82 @@
+name: Zepp Simulator CDP UI inspection (no account login)
+on:
+  push:
+    branches: ['research/zepp-simulator-ci']
+    paths: ['.github/workflows/zepp-simulator-cdp-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Install official Simulator and CDP inspection requirements
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xauth xdotool scrot python3-pil libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0
+          python -m pip install --break-system-packages -q websocket-client requests
+          curl --fail --location --retry 2 --max-time 180 -o /tmp/zepp-simulator.deb \
+            'https://upload-cdn.zepp.com/zepp-applet-and-wechat-applet/20260717/simulator_2.1.2_linux_amd64.deb'
+          sudo apt-get install -y /tmp/zepp-simulator.deb
+      - name: Inspect sanitised login field geometry through Electron debug protocol
+        run: |
+          set -euo pipefail
+          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+          export DISPLAY=:99
+          sleep 3
+          ELECTRON_DISABLE_SANDBOX=1 /opt/simulator/simulator --no-sandbox \
+            --remote-debugging-port=9222 --remote-allow-origins='*' \
+            >/tmp/sim.log 2>&1 &
+          sleep 10
+          xdotool mousemove --sync 1115 132 click 1
+          sleep 3
+          mkdir -p simulator-ci
+          scrot -z /tmp/zepp-modal.png
+          python3 - <<'PY'
+          import json, requests, websocket, time
+          from PIL import Image,ImageDraw
+          print('CDP INSPECTION: no Zepp account credentials supplied to this workflow.')
+          try: pages=requests.get('http://127.0.0.1:9222/json',timeout=5).json()
+          except Exception as e:
+            print('CDP unavailable:',type(e).__name__)
+            raise
+          print('CDP target count:',len(pages))
+          js="""(()=>({
+            title:document.title.slice(0,50),
+            inputs:[...document.querySelectorAll('input')].map(el=>{
+              const r=el.getBoundingClientRect();
+              return {type:el.type,placeholder:(el.placeholder||'').slice(0,40),
+               x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)};
+            }),
+            iframes:document.querySelectorAll('iframe').length,
+            buttons:[...document.querySelectorAll('button,[role=button]')].map(el=>{
+              const r=el.getBoundingClientRect();
+              return {text:(el.innerText||'').trim().slice(0,20),
+                x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)}
+            }).filter(x=>x.w>20&&x.h>10).slice(0,40)
+          }))()"""
+          for i,entry in enumerate(pages):
+            if entry.get('type') not in ('page','webview'): continue
+            try:
+              ws=websocket.create_connection(entry['webSocketDebuggerUrl'],timeout=5,suppress_origin=True)
+              ws.send(json.dumps({'id':1,'method':'Runtime.evaluate','params':{'expression':js,'returnByValue':True}}))
+              while True:
+                reply=json.loads(ws.recv())
+                if reply.get('id')==1:break
+              ws.close()
+              value=reply.get('result',{}).get('result',{}).get('value')
+              if value: print('CDP TARGET',i,json.dumps(value,ensure_ascii=False)[:4000])
+            except Exception as e: print('CDP target',i,'not readable:',type(e).__name__)
+          im=Image.open('/tmp/zepp-modal.png').convert('RGB')
+          d=ImageDraw.Draw(im)
+          d.rectangle((110,85,227,215),fill=(20,20,20))
+          d.rectangle((455,268,825,438),fill=(20,20,20))
+          im.save('simulator-ci/zepp-login-form-redacted.png')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zepp-cdp-ui-inspection
+          path: simulator-ci/*.png
+          if-no-files-found: warn
