@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
- let page,transferFile=null,callbacks={},crown,swipe,stopped=0;
+ let page,crown,swipe,stopped=0;
  const requests=[],cache=new Map(),savedFiles=new Map();
  if(cacheRadar)cache.set('buienradar.animation.v2',JSON.stringify(cacheRadar));
  if(oldKmi)cache.set('buienradar.future-radar.v1',JSON.stringify(oldKmi));
@@ -18,10 +18,6 @@ function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
  const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3,IMG:4,VIEW_CONTAINER:5},
   prop:{TEXT:'text',COLOR:'color',H:'h',Y:'y',VISIBLE:'visible',MORE:'more'},
   align:{CENTER_H:1},text_style:{WRAP:1},createWidget};
- class TransferFile{
-  getInbox(){return {on(event,cb){callbacks[event]=cb;},
-   getNextFile(){return transferFile;}};}
- }
  const now=Date.now(),rain={ok:true,updatedAt:now,
   location:{name:'Antwerpen',lat:51.2194,lon:4.4025},
   summary1h:{state:'dry',totalMm:0},summary2h:{state:'dry',totalMm:0},
@@ -42,7 +38,7 @@ function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
  vm.runInNewContext(source,{
   Page:x=>page=x,BasePage:x=>x,ui,
   setScrollMode:x=>{swipe=x;},getSwiperIndex:()=>uiPage+1,
-  SCROLL_MODE_SWIPER_HORIZONTAL:'horizontal',TransferFile,push:()=>{},
+  SCROLL_MODE_SWIPER_HORIZONTAL:'horizontal',push:()=>{},
   onDigitalCrown:({callback})=>{crown=callback;},offDigitalCrown:()=>{},KEY_HOME:1,
   LocalStorage:class{getItem(k){return cache.get(k);}setItem(k,v){cache.set(k,v);}},
   readFileSync:({path})=>{assert.equal(path,'data://download/radar.gif');return new Uint8Array([71,73,70]);},
@@ -62,16 +58,16 @@ function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
   if(request.method==='config.get')return {ok:true,location:rain.location};
   return {ok:false,error:'unknown'};
  };
- const receive=(fetchedAt=Date.now())=>{
-  transferFile={params:{kind:'buienradar-forecast-gif',source:'Buienradar',fetchedAt},
-   sessionId:'gif-1',filePath:'data://download/radar.gif',readyState:'transferred'};
-  callbacks.NEWFILE();
- };
- const receiveCurrent=(fetchedAt=Date.now())=>{
-  transferFile={params:{kind:'buienradar-current-frame',source:'Buienradar',fetchedAt},
-   sessionId:'current-1',filePath:'data://download/current.img',readyState:'transferred'};
-  callbacks.NEWFILE();
- };
+ const receive=(fetchedAt=Date.now())=>page.onReceivedFile({
+  params:{kind:'buienradar-forecast-gif',source:'Buienradar',fetchedAt},
+  sessionId:'gif-1',filePath:'data://download/radar.gif',
+  readyState:'transferred'
+ });
+ const receiveCurrent=(fetchedAt=Date.now())=>page.onReceivedFile({
+  params:{kind:'buienradar-current-frame',source:'Buienradar',fetchedAt},
+  sessionId:'current-1',filePath:'data://download/current.img',
+  readyState:'transferred'
+ });
  return {page,requests,cache,receive,receiveCurrent,swipe:()=>swipe,savedFiles,
   stopped:()=>stopped,crown:()=>crown,setUiPage:v=>uiPage=v};
 }
@@ -172,5 +168,47 @@ test('Expired current radar is never reused as up-to-date forecast',async()=>{
  const t=launch();t.page.build();await flush();
  t.receiveCurrent(Date.now()-3600000);await flush();
  assert.equal(t.page.radarWidget.values.visible,false);
+ t.page.onDestroy();
+});
+
+test('ZML delivers radar through the existing BasePage onReceivedFile hook',async()=>{
+ const source=fs.readFileSync(new URL('../page/index.js',import.meta.url),'utf8');
+ assert.match(source,/onReceivedFile\(file\)/);
+ assert.ok(!/new TransferFile\(|\.getNextFile\(|inbox\.on\(/.test(source),
+  'A competing raw BLE inbox would steal the received file from ZML');
+ const t=launch();t.page.build();await flush();
+ t.receiveCurrent();await flush();
+ assert.equal(t.page.currentFrame.path,'data://download/current.img');
+ assert.equal(t.page.radarWidget.values.visible,true);
+ t.page.onDestroy();
+});
+test('ZML asynchronous file transfer callback can complete an image later',async()=>{
+ const t=launch();t.page.build();await flush();
+ let changed;
+ const file={params:{kind:'buienradar-current-frame',source:'Buienradar',
+   fetchedAt:Date.now()},sessionId:'current-pending',
+   readyState:'transferring',filePath:null,
+   on(name,callback){if(name==='change')changed=callback;}};
+ t.page.onReceivedFile(file);
+ assert.equal(t.page.radarWidget.values.visible,false);
+ file.filePath='data://download/received-current.img';
+ file.readyState='transferred';
+ changed({data:{readyState:'transferred'}});
+ assert.equal(t.page.radarWidget.values.src,'data://download/received-current.img');
+ assert.equal(t.page.radarWidget.values.visible,true);
+ t.page.onDestroy();
+});
+test('ZML transfer errors are visible rather than waiting indefinitely',async()=>{
+ const t=launch();t.page.build();await flush();
+ let changed;
+ const file={params:{kind:'buienradar-current-frame',source:'Buienradar',
+   fetchedAt:Date.now()},sessionId:'failed-current',
+   readyState:'transferring',filePath:null,
+   on(name,cb){if(name==='change')changed=cb;}};
+ t.page.onReceivedFile(file);
+ changed({data:{readyState:'error'}});
+ assert.match(t.page.radarError,/BLUETOOTH/);
+ assert.equal(t.page.radarSyncing,false);
+ assert.equal(t.page.radarLabel.values.text,'OPNIEUW PROBEREN');
  t.page.onDestroy();
 });
