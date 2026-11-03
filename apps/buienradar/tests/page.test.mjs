@@ -71,6 +71,17 @@ function launch(connected=true) {
    frame.filePath='data://download/late-valid.img';
    callbacks.FILE();
   },
+  receiveNewObjectAtFinish(){
+   const stamp=new Date().toISOString();
+   const old={params:{kind:'buienradar-snapshot',
+    generatedAt:stamp,frameIndex:0},sessionId:'same-id',
+    readyState:'transferring',filePath:null};
+   frame=old;
+   callbacks.NEWFILE();
+   frame={...old,filePath:'data://download/finished.img',
+    readyState:'transferred'};
+   callbacks.FILE();
+  },
   getStopped:()=>stopped
  };
 }
@@ -202,5 +213,14 @@ test('Radar failure shows a clear retry action, never a stale-as-live claim',asy
  t.page.updateRadarLabel();
  assert.match(t.page.radarLabel.values.text,/AFBEELDING MISLUKT/);
  assert.equal(typeof t.page.radarLabel.values.click_func,'function');
+ t.page.onDestroy();
+});
+
+test('Zepp FILE may expose a new FileObject with a path not present in NEWFILE',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receiveNewObjectAtFinish();
+ assert.equal(t.page.radarMode,'snapshot');
+ assert.equal(t.page.radarPaths[0],'data://download/finished.img');
+ assert.equal(t.page.radarLabel.values.visible,false);
  t.page.onDestroy();
 });
