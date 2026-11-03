@@ -300,7 +300,7 @@ Page(BasePage({
    // Keep last snapshot for offline widget; it is marked stale there.
    // A location change explicitly clears that old city's snapshot. 
    this.rainState.setProperty(ui.prop.TEXT,'GEEN RECENTE DATA');
-   this.rainDetail.setProperty(ui.prop.TEXT,'Open de app opnieuw');
+   this.rainDetail.setProperty(ui.prop.TEXT,'Telefoon of gegevens niet beschikbaar');
    this.temp.setProperty(ui.prop.TEXT,'--°');
    this.amount.setProperty(ui.prop.TEXT,'-- mm');
    this.wind.setProperty(ui.prop.TEXT,'-- km/u');
@@ -482,8 +482,11 @@ Page(BasePage({
   if(prior>0){try{cancelAlarm(prior);}catch(_){}}
   storage.setItem('buienradar.alert-alarm-id','0');
   storage.setItem('buienradar.alert-key','');
-  const sec=Math.max(3,Math.round((onsetAt-Date.now()-lead*60000)/1000));
-  if(sec>2*3600)return;
+  const untilAlert=onsetAt-Date.now()-lead*60000;
+  // Never turn a missed alert into a new immediate alert.
+  // This matters when a stale forecast arrives after its alert time.
+  if(untilAlert<=0||untilAlert>2*3600000)return;
+  const sec=Math.max(3,Math.ceil(untilAlert/1000));
   const id=setAlarm({url:'app-service/rain-alert',delay:sec,store:true,
    param:JSON.stringify({place:d.location&&d.location.name||'Buienradar',
     onsetAt,lead,plannedAt:Date.now()})});

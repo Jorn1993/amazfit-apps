@@ -130,3 +130,14 @@ test('The code has a crown listener but no permanently visible zoom buttons',asy
  assert.equal(typeof t.crown,'function');
  t.page.onDestroy();
 });
+
+test('Rain alert does not fire late after its intended lead time',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.cache.set('buienradar.alert',JSON.stringify({enabled:true,lead:30}));
+ t.page.rain={...t.page.rain,
+  updatedAt:Date.now()-10*60000,
+  points:Array.from({length:24},(_,i)=>({mmh:i>=2?1:0}))};
+ t.page.scheduleRainAlert(t.page.rain);
+ assert.equal(t.cache.get('buienradar.alert-alarm-id'),'0');
+ t.page.onDestroy();
+});

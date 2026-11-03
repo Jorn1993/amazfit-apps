@@ -44,22 +44,16 @@ SecondaryWidget({
    text:String(city),text_size:24,color:WHITE,normal_color:BG,
    press_color:0x174267,radius:23,
    click_func:()=>push({url:'page/index'})});
-  // Only a low, thin bar. Radar still occupies most of the watch face.
-  let temp='--°';
-  if(data&&typeof data.temperature==='number'&&Number.isFinite(data.temperature))
-   temp=Math.round(data.temperature)+'°';
-  const summary=data&&data.fresh?status(data):'Laatste radar';
-  const title=temp+'  ·  '+summary;
-  make(ui.widget.BUTTON,{x:91,y:342,w:298,h:79,
-   text:title,text_size:title.length>21?22:27,color:WHITE,
-   normal_color:BG,press_color:0x174267,radius:25,
+  // A SINGLE compact glance bar: never stack a second row over the map.
+  // Stale snapshots must not masquerade as current precipitation.
+  const fresh=!!(data&&data.fresh);
+  const temperature=fresh&&Number.isFinite(data.temperature)?
+   Math.round(data.temperature)+'°':'';
+  const message=fresh?status(data):'Radar · niet actueel';
+  const title=temperature?temperature+'  ·  '+message:message;
+  make(ui.widget.BUTTON,{x:98,y:368,w:284,h:53,
+   text:title,text_size:title.length>20?21:26,color:WHITE,
+   normal_color:BG,press_color:0x174267,radius:24,
    click_func:()=>push({url:'page/index'})});
-  if(data&&data.fresh){
-   const wind=(data.direction||'')+' '+(Number.isFinite(data.windKmh)?
-    Math.round(data.windKmh)+' km/u':'');
-   label(140,391,201,23,wind,17,SOFT);
-  }else{
-   label(133,391,214,23,'Tik voor actuele gegevens',16,SOFT);
-  }
  }
 });

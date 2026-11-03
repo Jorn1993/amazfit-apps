@@ -26,20 +26,20 @@ test('Widget shows unobstructed radar with one slim clickable status bar',()=>{
  assert.equal(img.props.w,480);assert.equal(img.props.h,480);
  assert.equal(t.widgets.filter(w=>w.type===3).length,1,'no huge opaque data panel');
  const bottom=t.widgets.find(w=>w.type===2&&w.props.y>300);
- assert.ok(bottom.props.h<=80);
+ assert.ok(bottom.props.h<=56,'radar must remain unobstructed');
  assert.match(bottom.props.text,/Droog/);
  bottom.props.click_func();assert.equal(t.routes[0].url,'page/index');
 });
 test('Widget stale state never describes old forecast as current',()=>{
  const t=launch(example,Date.now()-25*60000);
  const bottom=t.widgets.find(w=>w.type===2&&w.props.y>300);
- assert.match(bottom.props.text,/Laatste radar/);
+ assert.match(bottom.props.text,/niet actueel/);
  assert.ok(!bottom.props.text.includes('Droog'));
 });
 test('Cold start still displays radar without fake readings',()=>{
  const t=launch(null);
  assert.ok(t.widgets.some(w=>w.type===4&&w.props.src==='radar-frame-2.png'));
- assert.ok(t.widgets.some(w=>w.type===2&&w.props.text.includes('Laatste radar')));
+ assert.ok(t.widgets.some(w=>w.type===2&&w.props.text.includes('niet actueel')));
 });
 test('Widget labels and touch surfaces remain inside circular safe zone',()=>{
  const t=launch(example);
