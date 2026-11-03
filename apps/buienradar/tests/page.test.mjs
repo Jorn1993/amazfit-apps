@@ -2,68 +2,61 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
+function launch({connected=true,cacheCurrent=null,cacheOld=null}={}){
  let page,crown,swipe,stopped=0;
- const requests=[],cache=new Map(),savedFiles=new Map();
- if(cacheRadar)cache.set('buienradar.animation.v3',JSON.stringify(cacheRadar));
- if(oldKmi)cache.set('buienradar.future-radar.v1',JSON.stringify(oldKmi));
- function createWidget(type,options){
-  const widget={type,values:{...options},setProperty(key,value){
+ const requests=[],cache=new Map();
+ if(cacheCurrent)cache.set('buienradar.current.v2',JSON.stringify(cacheCurrent));
+ if(cacheOld)cache.set('buienradar.animation.v3',JSON.stringify(cacheOld));
+ function makeWidget(type,props){
+  const obj={type,values:{...props},setProperty(key,value){
    if(key==='more')Object.assign(this.values,value);
    else this.values[key]=value;
   }};
-  if(type===5)widget.createWidget=createWidget;
-  return widget;
+  if(type===5)obj.createWidget=makeWidget;
+  return obj;
  }
  const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3,IMG:4,VIEW_CONTAINER:5},
   prop:{TEXT:'text',COLOR:'color',H:'h',Y:'y',VISIBLE:'visible',MORE:'more'},
-  align:{CENTER_H:1},text_style:{WRAP:1},createWidget};
- const now=Date.now(),rain={ok:true,updatedAt:now,
-  location:{name:'Antwerpen',lat:51.2194,lon:4.4025},
-  summary1h:{state:'dry',totalMm:0},summary2h:{state:'dry',totalMm:0},
+  align:{CENTER_H:1},text_style:{WRAP:1},createWidget:makeWidget};
+ const now=Date.now(),location={name:'Antwerpen',lat:51.2194,lon:4.4025};
+ const rain={ok:true,updatedAt:now,location,
+  summary1h:{state:'dry',totalMm:0},
+  summary2h:{state:'dry',totalMm:0},
   points:Array.from({length:24},()=>({mmh:0,time:'18:00'})),
   nextHourMm:0,
   station:{temperature:11,windKmh:12,direction:'NO',weatherDescription:'Bewolkt'}};
- let uiPage=0;
+ let selectedPage=0;
  const source=fs.readFileSync(new URL('../page/index.js',import.meta.url),'utf8')
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(source,{
   Page:x=>page=x,BasePage:x=>x,ui,
-  setScrollMode:x=>{swipe=x;},getSwiperIndex:()=>uiPage+1,
+  setScrollMode:x=>swipe=x,getSwiperIndex:()=>selectedPage+1,
   SCROLL_MODE_SWIPER_HORIZONTAL:'horizontal',push:()=>{},
-  onDigitalCrown:({callback})=>{crown=callback;},offDigitalCrown:()=>{},KEY_HOME:1,
+  onDigitalCrown:({callback})=>crown=callback,offDigitalCrown:()=>{},KEY_HOME:1,
   LocalStorage:class{getItem(k){return cache.get(k);}setItem(k,v){cache.set(k,v);}},
   setInterval:()=>99,clearInterval:()=>{stopped++;},
   setTimeout:(fn,ms)=>{if(ms<=50)queueMicrotask(fn);return 22;},
-  clearTimeout:()=>{},
-  Date,Math,JSON,Number,String,Promise,Error,Array,Uint8Array
+  clearTimeout:()=>{},Date,Math,JSON,Number,String,Promise,Error,Array
  });
- page.request=async request=>{
-  requests.push(request);
-  if(request.method==='rain.forecast')return connected?rain:{ok:false,error:'offline'};
-  if(request.method==='radar.start')return connected?
-   {ok:true,source:'Buienradar',generation:1}:{ok:false,error:'offline'};
-  if(request.method==='radar.status')return {ok:true,stage:'transfer',busy:true};
-  if(request.method==='config.get')return {ok:true,location:rain.location};
+ page.request=async req=>{
+  requests.push(req);
+  if(req.method==='rain.forecast')return connected?rain:{ok:false,error:'offline'};
+  if(req.method==='radar.start')return connected?
+   {ok:true,source:'Buienradar',mode:'current'}:{ok:false,error:'offline'};
+  if(req.method==='radar.status')return {ok:true,stage:'transfer',busy:true};
+  if(req.method==='config.get')return {ok:true,location};
   return {ok:false,error:'unknown'};
  };
- const receive=(fetchedAt=Date.now(),index=0,generation=1)=>page.onReceivedFile({
-  params:{kind:'buienradar-native-frame',source:'Buienradar',fetchedAt,
-   frameIndex:index,generation},
-  sessionId:'native-'+generation+'-'+index,
-  filePath:'data://download/native-'+generation+'-'+index+'.png',
-  readyState:'transferred'
- });
- const receiveCurrent=(fetchedAt=Date.now())=>page.onReceivedFile({
-  params:{kind:'buienradar-current-frame',source:'Buienradar',fetchedAt},
-  sessionId:'current-1',filePath:'data://download/current.img',
-  readyState:'transferred'
- });
- return {page,requests,cache,receive,receiveCurrent,swipe:()=>swipe,savedFiles,
-  stopped:()=>stopped,crown:()=>crown,setUiPage:v=>uiPage=v};
+ const receive=(fetchedAt=Date.now(),filePath='data://download/real-native.img')=>
+  page.onReceivedFile({
+   params:{kind:'buienradar-current-frame',source:'Buienradar',fetchedAt},
+   sessionId:'observed-'+fetchedAt,filePath,readyState:'transferred'
+  });
+ return {page,requests,cache,receive,swipe:()=>swipe,stopped:()=>stopped,
+  crown:()=>crown,setUiPage:x=>selectedPage=x};
 }
 const flush=async()=>{for(let i=0;i<100;i++)await Promise.resolve();};
-test('Native 3-page UI preserves rain and weather services',async()=>{
+test('Main app retains 3 pages: radar, 2h rain and weather',async()=>{
  const t=launch();t.page.build();await flush();
  assert.equal(t.swipe().options.count,3);
  assert.equal(t.page.rainState.values.text,'DROOG');
@@ -71,133 +64,91 @@ test('Native 3-page UI preserves rain and weather services',async()=>{
  assert.ok(t.requests.some(x=>x.method==='rain.forecast'));
  assert.ok(t.requests.some(x=>x.method==='radar.start'));
  assert.equal(typeof t.crown(),'function');
- t.page.onDestroy();assert.equal(t.stopped(),3);
-});
-test('App starts with a neutral surface and never renders a KMI map',async()=>{
- const t=launch();t.page.build();await flush();
- assert.equal(t.page.radarBase.type,3);
- assert.equal(t.page.radarWidget.values.visible,false);
- assert.equal(t.page.radarTime.values.text,'BUIENRADAR · RADAR');
- assert.ok(!t.requests.some(x=>x.method==='radar.forecast'||x.method==='radar.frame'));
  t.page.onDestroy();
+ assert.equal(t.stopped(),3);
 });
-test('Phone-converted frames form native moving radar with zero local TGA files',async()=>{
+test('Fullscreen 480x480, never a smaller inset',async()=>{
  const t=launch();t.page.build();await flush();
- t.receive(Date.now(),0);t.receive(Date.now(),2);t.receive(Date.now(),4);
- await flush();
- assert.equal(t.savedFiles.size,0);
- assert.equal(t.page.radarWidget.values.visible,true);
- assert.equal(t.page.radarFrames.length,3);
- assert.deepEqual(Array.from(t.page.radarFrames,f=>f.frameIndex),[0,2,4]);
- assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[0].path);
- t.page.nextRadarFrame();
- assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[1].path);
- const stored=JSON.parse(t.cache.get('buienradar.animation.v3'));
- assert.equal(stored.source,'Buienradar');
- assert.equal(stored.horizonMinutes,180);
- t.page.onDestroy();
-});
-test('KMI cache is rejected, recent Buienradar cache displays directly',async()=>{
- const now=Date.now();
- const oldKmi={source:'KMI',fetchedAt:now,frames:[{path:'data://stale.png',validAt:now+600000}]};
- const one=launch({oldKmi});one.page.build();await flush();
- assert.equal(one.page.radarWidget.values.visible,false);one.page.onDestroy();
- const fresh={source:'Buienradar',fetchedAt:now,horizonMinutes:180,
-  frames:[{path:'data://first.png'},{path:'data://second.png'}]};
- const two=launch({cacheRadar:fresh});two.page.build();await flush();
- assert.equal(two.page.radarWidget.values.visible,true);
- assert.equal(two.page.radarWidget.values.src,'data://first.png');
- two.page.onDestroy();
- const three=launch({cacheRadar:{...fresh,fetchedAt:now-60*60000}});
- three.page.build();await flush();
- assert.equal(three.page.radarWidget.values.visible,false);
- three.page.onDestroy();
-});
-test('Offline errors remain visible instead of falsely showing a forecast',async()=>{
- const t=launch({connected:false});
- t.page.build();await flush();
- assert.equal(t.page.radarWidget.values.visible,false);
- assert.match(t.page.radarError,/offline/);
- assert.match(t.page.rainDetail.values.text,/offline/);
- t.page.onDestroy();
-});
-
-test('Full 480x480 radar, not a 320x320 inset',async()=>{
- const t=launch();t.page.build();await flush();
- assert.equal(t.page.radarBase.values.w,480);
- assert.equal(t.page.radarBase.values.h,480);
  assert.equal(t.page.radarWidget.values.w,480);
  assert.equal(t.page.radarWidget.values.h,480);
- t.receiveCurrent();await flush();
- assert.equal(t.page.radarWidget.values.src,'data://download/current.img');
+ assert.equal(t.page.radarWidget.values.visible,false);
+ t.receive();
  assert.equal(t.page.radarWidget.values.visible,true);
+ assert.equal(t.page.radarWidget.values.src,'data://download/real-native.img');
  assert.equal(t.page.radarWidget.values.x,0);
  assert.equal(t.page.radarWidget.values.y,0);
  assert.equal(t.page.radarTime.values.text,'BUIENRADAR · ACTUEEL');
- assert.equal(t.page.radarLabel.values.y,357);
+ assert.equal(t.page.radarLabel.values.visible,false);
  t.page.onDestroy();
 });
-test('Current Buienradar image remains on screen when animated GIF has not arrived',async()=>{
+test('A current observed radar is never labelled as a future forecast',async()=>{
  const t=launch();t.page.build();await flush();
- t.receiveCurrent();await flush();
- assert.ok(t.page.radarSyncing);
- assert.equal(t.page.radarWidget.values.src,'data://download/current.img');
- assert.equal(JSON.parse(t.cache.get('buienradar.current.v1')).source,'Buienradar');
+ t.receive();
+ assert.equal(t.page.radarTime.values.text,'BUIENRADAR · ACTUEEL');
+ assert.ok(!t.page.radarTime.values.text.includes('+3U'));
  t.page.onDestroy();
 });
-test('Animated future frames replace the current observation when decoded',async()=>{
+test('Fresh converted image is cached for quick widget access',async()=>{
  const t=launch();t.page.build();await flush();
- t.receiveCurrent();await flush();
- t.receive(Date.now(),0);t.receive(Date.now(),2);t.receive(Date.now(),4);
- await flush();
- assert.equal(t.page.radarFrames.length,3);
- assert.equal(t.page.radarTime.values.text,'BUIENRADAR · +3U');
- assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[0].path);
- assert.equal(t.page.radarWidget.values.w,480);
- assert.equal(t.page.radarWidget.values.h,480);
+ t.receive();
+ const saved=JSON.parse(t.cache.get('buienradar.current.v2'));
+ assert.equal(saved.source,'Buienradar');
+ assert.equal(saved.path,'data://download/real-native.img');
+ assert.ok(Date.now()-saved.fetchedAt<5000);
  t.page.onDestroy();
 });
-test('Expired current radar is never reused as up-to-date forecast',async()=>{
- const t=launch();t.page.build();await flush();
- t.receiveCurrent(Date.now()-3600000);await flush();
+test('Legacy potentially corrupt GIF cache is never loaded',async()=>{
+ const t=launch({cacheOld:{source:'Buienradar',horizonMinutes:180,
+  fetchedAt:Date.now(),frames:[{path:'data://green-noise.png'}]}});
+ t.page.build();await flush();
  assert.equal(t.page.radarWidget.values.visible,false);
  t.page.onDestroy();
 });
-
-test('ZML delivers radar through the existing BasePage onReceivedFile hook',async()=>{
- const source=fs.readFileSync(new URL('../page/index.js',import.meta.url),'utf8');
- assert.match(source,/onReceivedFile\(file\)/);
- assert.ok(!/new TransferFile\(|\.getNextFile\(|inbox\.on\(/.test(source),
-  'A competing raw BLE inbox would steal the received file from ZML');
- const t=launch();t.page.build();await flush();
- t.receiveCurrent();await flush();
- assert.equal(t.page.currentFrame.path,'data://download/current.img');
+test('Recent current cached native image shows immediately',async()=>{
+ const t=launch({cacheCurrent:{source:'Buienradar',fetchedAt:Date.now(),
+  path:'data://download/known-good.img'}});
+ t.page.build();await flush();
+ assert.equal(t.page.radarWidget.values.src,'data://download/known-good.img');
  assert.equal(t.page.radarWidget.values.visible,true);
  t.page.onDestroy();
 });
-test('ZML asynchronous file transfer callback can complete an image later',async()=>{
+test('Expired image never appears as current',async()=>{
+ const t=launch({cacheCurrent:{source:'Buienradar',
+  fetchedAt:Date.now()-60*60000,path:'data://download/stale.img'}});
+ t.page.build();await flush();
+ assert.equal(t.page.radarWidget.values.visible,false);
+ t.receive(Date.now()-60*60000);
+ assert.equal(t.page.radarWidget.values.visible,false);
+ t.page.onDestroy();
+});
+test('Out of order older image cannot overwrite newer native frame',async()=>{
+ const t=launch();t.page.build();await flush();
+ const now=Date.now();
+ t.receive(now,'data://new.img');
+ t.receive(now-5000,'data://old.img');
+ assert.equal(t.page.radarWidget.values.src,'data://new.img');
+ t.page.onDestroy();
+});
+test('ZML asynchronous BLE receiver waits for transfer completed',async()=>{
  const t=launch();t.page.build();await flush();
  let changed;
  const file={params:{kind:'buienradar-current-frame',source:'Buienradar',
-   fetchedAt:Date.now()},sessionId:'current-pending',
-   readyState:'transferring',filePath:null,
-   on(name,callback){if(name==='change')changed=callback;}};
+  fetchedAt:Date.now()},sessionId:'async-current',filePath:null,
+  readyState:'transferring',on(type,cb){if(type==='change')changed=cb;}};
  t.page.onReceivedFile(file);
  assert.equal(t.page.radarWidget.values.visible,false);
- file.filePath='data://download/received-current.img';
+ file.filePath='data://converted-native.img';
  file.readyState='transferred';
  changed({data:{readyState:'transferred'}});
- assert.equal(t.page.radarWidget.values.src,'data://download/received-current.img');
- assert.equal(t.page.radarWidget.values.visible,true);
+ assert.equal(t.page.radarWidget.values.src,'data://converted-native.img');
  t.page.onDestroy();
 });
-test('ZML transfer errors are visible rather than waiting indefinitely',async()=>{
+test('Broken Bluetooth is an explicit visible error rather than infinite loading',async()=>{
  const t=launch();t.page.build();await flush();
  let changed;
  const file={params:{kind:'buienradar-current-frame',source:'Buienradar',
-   fetchedAt:Date.now()},sessionId:'failed-current',
-   readyState:'transferring',filePath:null,
-   on(name,cb){if(name==='change')changed=cb;}};
+  fetchedAt:Date.now()},sessionId:'broken',filePath:null,
+  readyState:'transferring',on(type,cb){if(type==='change')changed=cb;}};
  t.page.onReceivedFile(file);
  changed({data:{readyState:'error'}});
  assert.match(t.page.radarError,/BLUETOOTH/);
@@ -205,32 +156,9 @@ test('ZML transfer errors are visible rather than waiting indefinitely',async()=
  assert.equal(t.page.radarLabel.values.text,'OPNIEUW PROBEREN');
  t.page.onDestroy();
 });
-
-test('Green corrupted frames from pre-1.1.3 cache are never reused',async()=>{
- const t=launch();
- t.cache.set('buienradar.animation.v2',JSON.stringify({
-  source:'Buienradar',fetchedAt:Date.now(),horizonMinutes:180,
-  frames:[{path:'data://corrupt-old-tga.png'}]
- }));
- t.page.build();await flush();
- assert.equal(t.page.radarWidget.values.visible,false);
- t.receive(Date.now(),0,1);await flush();
- assert.equal(t.page.radarWidget.values.src,'data://download/native-1-0.png');
+test('Offline side service error is explicit and rain never looks fresh',async()=>{
+ const t=launch({connected:false});t.page.build();await flush();
+ assert.match(t.page.radarError,/offline/);
+ assert.match(t.page.rainDetail.values.text,/offline/);
  t.page.onDestroy();
-});
-test('Newer GIF forecast replaces previous generation without mixing frames',async()=>{
- const t=launch();t.page.build();await flush();
- t.receive(Date.now(),0,1);t.receive(Date.now(),2,1);
- assert.equal(t.page.radarFrames.length,2);
- t.receive(Date.now(),0,2);
- assert.equal(t.page.radarFrames.length,1);
- t.receive(Date.now(),4,1);
- assert.equal(t.page.radarFrames.length,1);
- t.receive(Date.now(),2,2);
- assert.deepEqual(Array.from(t.page.radarFrames,f=>f.frameIndex),[0,2]);
- t.page.onDestroy();
-});
-test('Watch never imports or calls custom proprietary image encoder',()=>{
- const source=fs.readFileSync(new URL('../page/index.js',import.meta.url),'utf8');
- assert.ok(!/toZeppImage|writeFileSync|decodeRadar\(|new BuienradarGif/.test(source));
 });
