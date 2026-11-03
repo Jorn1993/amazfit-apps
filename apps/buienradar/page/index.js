@@ -2,6 +2,8 @@ import * as ui from '@zos/ui';
 import {setScrollMode,getSwiperIndex,SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
 import TransferFile from '@zos/ble/TransferFile';
 import {LocalStorage} from '@zos/storage';
+import {readFileSync,writeFileSync} from '@zos/fs';
+import {BuienradarGif,toZeppImage} from './gif-decoder.js';
 import {push} from '@zos/router';
 import {onDigitalCrown,offDigitalCrown,KEY_HOME} from '@zos/interaction';
 import {set as setAlarm, cancel as cancelAlarm} from '@zos/alarm';
@@ -59,26 +61,29 @@ Page(BasePage({
  build(){
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
   this.rainError=null;
-  this.radarFrames=[];this.radarTimes=[];this.radarFetchedAt=0;
+  this.radarFrames=[];this.radarFetchedAt=0;
   this.radarSyncing=false;this.radarError=null;this.radarEpoch=0;
   this.radarFallback=null;this.radarDisplayed=false;
-  this.frameIndex=0;this.pendingFrame=null;
+  this.radarRequestAt=0;this.frameIndex=0;this.statusTicks=0;
   this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];this.cityLabels=[];this.lastCrown=0;
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
   this.lastAlertKey=null;
+  // Never read the old KMI cache. Only genuine, recent Buienradar frames.
   try{
-   const old=JSON.parse(storage.getItem('buienradar.future-radar.v1')||'null');
-   if(old&&old.source==='KMI'&&Date.now()-old.fetchedAt>=0&&
-      Date.now()-old.fetchedAt<12*60000&&Array.isArray(old.frames)){
-    const current=old.frames.filter(f=>f&&f.path&&f.validAt>Date.now()&&
-     typeof f.path==='string'&&f.path.startsWith('data://'));
-    if(current.length){
-     this.radarFrames=current;this.radarTimes=current.map(f=>f.validAt);
-     this.radarFetchedAt=old.fetchedAt;
+   const old=JSON.parse(storage.getItem('buienradar.animation.v2')||'null');
+   const now=Date.now();
+   if(old?.source==='Buienradar'&&old.horizonMinutes===180&&
+      now>=old.fetchedAt&&now-old.fetchedAt<12*60000&&
+      Array.isArray(old.frames)){
+    const frames=old.frames.filter(f=>f&&typeof f.path==='string'&&
+     f.path.startsWith('data://'));
+    if(frames.length>=2){
+     this.radarFrames=frames;this.radarFetchedAt=old.fetchedAt;
     }
    }
   }catch(_){}
+
   // The documented horizontal swiper takes width and count only.
   // The active (1-based) page is read from getSwiperIndex().
   setScrollMode({mode:SCROLL_MODE_SWIPER_HORIZONTAL,
@@ -110,22 +115,22 @@ Page(BasePage({
    });
    this.cityLabels.push(button);return button;
   };
-  // KMI official 3h future PNG overlays, over a matching bundled Belgian
-  // map. No bundled historical rain images are ever shown.
-  this.radarBase=create(0,ui.widget.IMG,{
-   x:0,y:54,w:SIZE,h:368,src:'kmi-be-map.png',auto_scale:true
-  });
+  // The original Buienradar Belgium +3h GIF is transferred once and split
+  // into native frame files on the watch. The GIF includes its own time labels.
+  this.radarBase=rect(0,80,77,320,320,0x122735,16);
   this.radarWidget=create(0,ui.widget.IMG,{
-   x:0,y:54,w:SIZE,h:368,src:'kmi-clear.png',auto_scale:true
+   x:80,y:77,w:320,h:320,src:'weather-cloud.png',auto_scale:true
   });
+  this.radarWidget.setProperty(ui.prop.VISIBLE,false);
   this.city=cityButton(0);
-  this.radarTime=txt(0,174,402,132,36,'KMI +3u',23,C.white);
+  this.radarTime=txt(0,135,401,210,34,'BUIENRADAR · +3U',20,C.white);
   this.radarLabel=create(0,ui.widget.BUTTON,{
-   x:123,y:91,w:234,h:49,text:'VOORSPELLING LADEN',
-   text_size:17,color:C.white,normal_color:0x102839,
-   press_color:0x246586,radius:22,
+   x:103,y:203,w:274,h:54,text:'BUIENRADAR OPHALEN',
+   text_size:19,color:C.white,normal_color:0x102839,
+   press_color:0x246586,radius:23,
    click_func:()=>void this.requestRadar(true)
   });
+
   this.applyRadarFrame();
   this.updateRadarLabel();
 
@@ -200,6 +205,8 @@ Page(BasePage({
     this.updateRadarLabel();
     this.nextRadarFrame();
    }
+   if(this.radarSyncing&&++this.statusTicks%8===0)
+    void this.pollRadarStatus();
    if(++this.configTick%12===0)this.checkConfig();
   },950);
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
@@ -223,95 +230,120 @@ Page(BasePage({
    const inbox=this.transfer.getInbox(),handled={};
    const handle=()=>{
     const file=inbox.getNextFile();
-    if(!file?.params||file.params.kind!=='future-radar-frame'||
-       file.params.source!=='KMI')return;
-    const idx=Number(file.params.frameIndex);
-    const validAt=Number(file.params.validAt);
-    if(!Number.isInteger(idx)||idx<0||idx>=12||
-      !Number.isFinite(validAt)||validAt<=Date.now())return;
-    const id=String(file.sessionId||file.fileName||file.filePath||idx)+'/'+idx;
-    let record=handled[id];
-    if(!record){record={file,done:false};handled[id]=record;}
-    else if(file.filePath)record.file=file;
+    if(!file?.params||file.params.kind!=='buienradar-forecast-gif'||
+       file.params.source!=='Buienradar')return;
+    const fetchedAt=Number(file.params.fetchedAt),now=Date.now();
+    if(!Number.isFinite(fetchedAt)||fetchedAt>now+60000||
+       now-fetchedAt>12*60000)return;
+    const id=String(file.sessionId||file.filePath||file.fileName||fetchedAt);
+    let rec=handled[id];
+    if(!rec){rec={file,done:false};handled[id]=rec;}
+    else rec.file=file;
     const process=()=>{
-     const item=record.file;
-     if(record.done||!item.filePath||item.readyState!=='transferred')return;
-     // Accept only frames belonging to the current verified time sequence.
-     if(this.radarTimes[idx]!==validAt)return;
-     const frame={path:item.filePath,validAt,
-      time:file.params.validTime};
-     this.radarFrames[idx]=frame;
-     this.radarFallback=null; // First confirmed new frame replaces the prior forecast.
-     record.done=true;
-     this.saveRadarCache();
-     this.applyRadarFrame();
-     this.updateRadarLabel();
-     if(this.pendingFrame&&this.pendingFrame.index===idx){
-      this.pendingFrame.resolve();this.pendingFrame=null;
-     }
+     if(rec.done||rec.file.readyState!=='transferred'||!rec.file.filePath)return;
+     rec.done=true;
+     this.decodeRadar(rec.file.filePath,fetchedAt);
     };
-    record.process=process;
-    process();
+    rec.process=process;process();
     if(typeof file.on==='function')file.on('change',process);
    };
    const sweep=()=>{
-    for(const record of Object.values(handled))
-     if(!record.done&&record.file.readyState==='transferred')
-      record.process?.();
+    for(const rec of Object.values(handled))
+     if(!rec.done&&rec.file.readyState==='transferred')rec.process?.();
    };
    inbox.on('NEWFILE',()=>{handle();sweep();});
    inbox.on('FILE',()=>{handle();sweep();});
   }catch(e){this.radarError='ONTVANGST: '+String(e.message||e);}
  },
+ decodeRadar(path,fetchedAt){
+  const epoch=++this.radarEpoch;
+  let decoder;
+  try{
+   const data=readFileSync({path});
+   if(!data)throw Error('GIF-bestand niet leesbaar');
+   decoder=new BuienradarGif(data);
+   if(decoder.width!==320||decoder.height!==320)
+    throw Error('Onbekend radarformaat');
+  }catch(e){
+   this.radarError='GIF: '+String(e.message||e);
+   this.radarSyncing=false;this.updateRadarLabel();
+   return;
+  }
+  const received=[];
+  let index=0;
+  const step=()=>{
+   if(this.disposed||epoch!==this.radarEpoch)return;
+   try{
+    const frame=decoder.nextFrame();
+    if(!frame){
+     if(received.length<2)throw Error('Geen bewegende Buienradar-beelden');
+     this.radarSyncing=false;this.radarError=null;
+     this.saveRadarCache();this.updateRadarLabel();
+     return;
+    }
+    const bytes=toZeppImage(frame.width,frame.height,frame.rgb);
+    const output='data://download/buienradar-'+fetchedAt+'-'+index+'.png';
+    writeFileSync({path:output,data:bytes});
+    received.push({path:output});
+    index++;
+    if(received.length>=2){
+     this.radarFrames=received.slice();
+     this.radarFetchedAt=fetchedAt;
+     this.radarFallback=null;this.frameIndex%=received.length;
+     this.applyRadarFrame();this.saveRadarCache();
+     this.updateRadarLabel();
+    }
+    // Yield to the watch UI after each frame to avoid a long blocked screen.
+    setTimeout(step,30);
+   }catch(e){
+    this.radarError='DECODER: '+String(e.message||e).slice(0,80);
+    this.radarSyncing=false;this.updateRadarLabel();
+   }
+  };
+  step();
+ },
  isRadarFresh(){
-  return this.radarFetchedAt>0&&
-   Date.now()-this.radarFetchedAt>=0&&
-   Date.now()-this.radarFetchedAt<12*60000&&
-   this.radarFrames.some(f=>f&&f.validAt>Date.now());
+  const age=Date.now()-this.radarFetchedAt;
+  return this.radarFrames.length>=2&&age>=0&&age<12*60000;
  },
  visibleRadarFrames(now=Date.now()){
-  if(this.isRadarFresh())
-   return this.radarFrames.filter(f=>f&&f.validAt>now);
-  const prior=this.radarFallback;
-  if(prior&&now>=prior.fetchedAt&&now-prior.fetchedAt<12*60000)
-   return prior.frames.filter(f=>f&&f.validAt>now);
+  if(this.isRadarFresh())return this.radarFrames;
+  const prev=this.radarFallback;
+  if(prev&&now>=prev.fetchedAt&&now-prev.fetchedAt<12*60000)
+   return prev.frames;
   return [];
  },
  updateRadarLabel(){
   if(!this.radarLabel)return;
-  const good=this.visibleRadarFrames().length>0;
+  const good=this.visibleRadarFrames().length>=2;
   let caption='';
   if(!good){
-   if(this.radarSyncing)caption='VOORSPELLING LADEN';
-   else if(this.radarError)caption='OPHALEN MISLUKT · TIK';
-   else caption='VOORSPELLING OPHALEN';
+   if(this.radarSyncing)caption='BUIENRADAR LADEN…';
+   else if(this.radarError)caption='MISLUKT · TIK OPNIEUW';
+   else caption='BUIENRADAR OPHALEN';
   }
   this.radarLabel.setProperty(ui.prop.TEXT,caption);
   this.radarLabel.setProperty(ui.prop.VISIBLE,!good);
  },
  saveRadarCache(){
+  if(!this.isRadarFresh())return;
   try{
-   if(!this.radarFetchedAt)return;
-   storage.setItem('buienradar.future-radar.v1',JSON.stringify({
-    source:'KMI',fetchedAt:this.radarFetchedAt,
-    frames:this.radarFrames.filter(f=>f&&f.path&&f.validAt>Date.now())
+   storage.setItem('buienradar.animation.v2',JSON.stringify({
+    source:'Buienradar',horizonMinutes:180,fetchedAt:this.radarFetchedAt,
+    frames:this.radarFrames
    }));
   }catch(_){}
  },
  nextRadarFrame(){
   const frames=this.visibleRadarFrames();
-  if(!frames.length){
-   // An expired cached image must disappear, even with no network available.
+  if(frames.length<2){
    if(this.radarDisplayed)this.applyRadarFrame();
    return;
   }
-  if(frames.length<2)return;
   this.frameIndex=(this.frameIndex+1)%frames.length;
   this.applyRadarFrame();
  },
  async phone(message,timeout=20000){
-  // ZML BasePage exposes request() directly; `this.messaging.request` is not
-  // a public Zepp API and silently prevented every phone-side data request.
   if(typeof this.request!=='function')throw Error('Zepp verbinding niet beschikbaar');
   let timer;
   try{
@@ -322,70 +354,35 @@ Page(BasePage({
    ]);
   }finally{if(timer!==undefined)clearTimeout(timer);}
  },
- async downloadFutureFrame(index){
-  const t=this.radarTimes[index];
-  if(!Number.isFinite(t)||t<=Date.now())return;
-  // Set up the waiter BEFORE requesting transfer, preventing a BLE race.
-  let resolvePending,rejectPending;
-  const waiter=new Promise((resolve,reject)=>{
-   const timeout=setTimeout(()=>{
-    if(this.pendingFrame?.index===index)this.pendingFrame=null;
-    reject(Error('OVERDRACHT: radarframe ontbreekt'));
-   },36000);
-   resolvePending=()=>{clearTimeout(timeout);resolve();};
-   rejectPending=e=>{clearTimeout(timeout);reject(e);};
-  });
-  this.pendingFrame={index,resolve:resolvePending,reject:rejectPending};
-  const result=await this.phone({method:'radar.frame',params:{index}},11000);
-  if(!result?.ok){
-   this.pendingFrame=null;
-   // Avoid unhandled rejection if the service declines before the waiter is used.
-   resolvePending();
-   throw Error(result?.error||'TRANSFER: radarframe niet gestart');
-  }
-  await waiter;
- },
- async requestRadar(force=false){
-  if(this.disposed||this.radarSyncing)return;
-  // A valid cached future frame is immediately usable: never clear it
-  // on startup while fetching a replacement in the background.
-  if(!force&&this.isRadarFresh()&&
-     Date.now()-this.radarFetchedAt<8*60000)return;
-  this.radarSyncing=true;this.radarError=null;this.updateRadarLabel();
+ async pollRadarStatus(){
+  if(this.disposed||!this.radarSyncing)return;
   try{
-   const answer=await this.phone({method:'radar.forecast'},17000);
-   if(!answer?.ok||!Array.isArray(answer.frames)||!answer.frames.length)
-    throw Error(answer?.error||'Geen toekomstige radar beschikbaar');
-   const times=answer.frames.map(f=>Number(f.validAt));
-   if(times.some(t=>!Number.isFinite(t))||times[0]<=Date.now())
-    throw Error('Geen geldige toekomstige radartijden');
-   // Retain only a strictly fresh, future-dated prior image while the new
-   // PNGs download. Never replace a visible forecast with an empty map.
-   const priorFrames=this.visibleRadarFrames();
-   if(priorFrames.length){
-    const fetchedAt=this.isRadarFresh()?this.radarFetchedAt:
-     this.radarFallback?.fetchedAt;
-    this.radarFallback={frames:priorFrames,fetchedAt};
-   }else this.radarFallback=null;
-   this.radarTimes=times;
-   this.radarFetchedAt=Number(answer.fetchedAt);
-   this.radarFrames=new Array(times.length).fill(null);
-   this.frameIndex=0;
-   this.applyRadarFrame();
-   for(let i=0;i<times.length&&!this.disposed;i++){
-    if(times[i]<=Date.now())continue;
-    try{await this.downloadFutureFrame(i);}
-    catch(e){
-     if(this.radarFrames.filter(Boolean).length===0)throw e;
-     break; // Partial valid future animation is better than stale data.
-    }
-   }
+   const result=await this.phone({method:'radar.status'},9000);
+   if(result?.stage==='failed')throw Error(result.error||'overdracht mislukt');
+   if(Date.now()-this.radarRequestAt>95000)
+    throw Error('Overdracht duurt te lang');
   }catch(e){
    this.radarError=String(e.message||e);
-  }finally{
    this.radarSyncing=false;this.updateRadarLabel();
   }
  },
+ async requestRadar(force=false){
+  if(this.disposed||this.radarSyncing)return;
+  if(!force&&this.isRadarFresh()&&
+     Date.now()-this.radarFetchedAt<8*60000)return;
+  this.radarSyncing=true;this.radarError=null;
+  this.radarRequestAt=Date.now();this.statusTicks=0;
+  this.updateRadarLabel();
+  try{
+   const answer=await this.phone({method:'radar.start'},15000);
+   if(!answer?.ok||answer.source!=='Buienradar')
+    throw Error(answer?.error||'Buienradar niet bereikbaar');
+  }catch(e){
+   this.radarError=String(e.message||e);
+   this.radarSyncing=false;this.updateRadarLabel();
+  }
+ },
+
  draw(){
   if(this.disposed)return;
   const d=this.rain||EMPTY;
@@ -505,25 +502,21 @@ Page(BasePage({
  applyRadarFrame(){
   if(!this.radarBase||!this.radarWidget)return;
   const factor=this.zoom||1;
-  const w=Math.round(480*factor),h=Math.round(368*factor);
-  const geometry={x:Math.round((480-w)/2),y:Math.round(54+(368-h)/2),
-   w,h,auto_scale:true};
+  const dim=Math.round(320*factor);
+  const geometry={x:Math.round((480-dim)/2),y:Math.round(237-dim/2),
+   w:dim,h:dim,auto_scale:true};
   this.radarBase.setProperty(ui.prop.MORE,geometry);
-  const available=this.visibleRadarFrames();
-  const frame=available.length?available[this.frameIndex%available.length]:null;
+  const frames=this.visibleRadarFrames();
+  const frame=frames.length>=2?frames[this.frameIndex%frames.length]:null;
   this.radarDisplayed=!!frame;
-  this.radarWidget.setProperty(ui.prop.MORE,{
-   ...geometry,src:frame?.path||'kmi-clear.png'
+  if(frame)this.radarWidget.setProperty(ui.prop.MORE,{
+   ...geometry,src:frame.path
   });
-  if(this.radarTime){
-   const clock=frame?(() => {
-    const t=new Date(frame.validAt);
-    return String(t.getHours()).padStart(2,'0')+':'+
-      String(t.getMinutes()).padStart(2,'0');
-   })():'KMI +3u';
-   this.radarTime.setProperty(ui.prop.TEXT,clock);
-  }
+  this.radarWidget.setProperty(ui.prop.VISIBLE,!!frame);
+  if(this.radarTime)
+   this.radarTime.setProperty(ui.prop.TEXT,'BUIENRADAR · +3U');
  },
+
  renderForecast(){
    const sum=forecastFresh(this.rain)?
     (this.horizon===1?this.rain.summary1h:this.rain.summary2h):null;
@@ -610,7 +603,6 @@ Page(BasePage({
   if(this.frameTimer!==undefined)clearInterval(this.frameTimer);
   if(this.weatherTimer!==undefined)clearInterval(this.weatherTimer);
   if(this.radarTimer!==undefined)clearInterval(this.radarTimer);
-  if(this.pendingFrame)this.pendingFrame.reject(Error('App gesloten'));
-  this.pendingFrame=null;
+  this.radarEpoch++;
  }
 }));
