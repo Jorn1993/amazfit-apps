@@ -5,11 +5,11 @@
     "appName": "Buienradar",
     "appType": "app",
     "version": {
-      "name": "1.1.3",
-      "code": 25
+      "name": "1.2.0",
+      "code": 26
     },
     "vender": "Personal prototype",
-    "description": "True Buienradar BE 3h forecast rendered through Zepp native phone image conversion",
+    "description": "Actual Belgian Buienradar, 2h rain nowcast, weather and alerts",
     "icon": "icon.png"
   },
   "permissions": [

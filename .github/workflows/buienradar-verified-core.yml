@@ -1,0 +1,53 @@
+name: Buienradar hardware-verified core — test branch
+on:
+  push:
+    branches: ['feature/buienradar-verified-core']
+    paths:
+      - 'apps/buienradar/**'
+      - '.github/workflows/buienradar-verified-core.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the real official Buienradar static PNG
+        run: |
+          curl -fL --retry 2 --max-time 50 -o /tmp/buienradar-current.png 'https://image.buienradar.nl/2.0/image/single/RadarMapRainBE?width=320&height=320&renderBackground=True&renderBranding=False&renderText=False'
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          from PIL import Image
+          im=Image.open('/tmp/buienradar-current.png')
+          im.load()
+          assert im.format=='PNG' and im.size==(320,320)
+          print('Verified genuine source:',im.format,im.size,im.mode)
+          PY
+      - name: Run native app regression tests
+        run: |
+          node --check apps/buienradar/page/index.js
+          node --check apps/buienradar/app-side/index.js
+          node --check apps/buienradar/secondary-widget/index.js
+          node --test apps/buienradar/tests/*.test.mjs
+      - name: Build complete native Zepp OS Balance 2 app
+        run: |
+          npm install --prefix zeus-cli @zeppos/zeus-cli@1.9.3
+          ln -s @zeppos/zeus-cli/private-modules/zeppos-app-utils zeus-cli/node_modules/zeppos-app-utils
+          npm install --prefix apps/buienradar
+          node apps/buienradar/prepare-assets.mjs
+          python -m pip install --quiet pillow requests
+          python apps/buienradar/tools/generate_branding.py
+          (cd apps/buienradar && ../../zeus-cli/node_modules/.bin/zeus build)
+      - name: Verify Zepp package outputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          builds=list(Path('apps/buienradar/dist').glob('*.zab'))
+          assert builds,'missing Zepp ZAB'
+          print('Built',builds[-1],builds[-1].stat().st_size,'bytes')
+          PY
