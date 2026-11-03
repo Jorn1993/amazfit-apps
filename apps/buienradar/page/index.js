@@ -58,24 +58,23 @@ function isNightAt(lat,lon,date=new Date()){
 Page(BasePage({
  build(){
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
-  this.liveFrames=[];this.radarStamp=null;this.radarSyncing=false;
-  this.radarMode='archive';this.radarError=null;
-  this.radarStage='idle';this.lastSnapshotReceiptAt=0;
-  this.radarPaths=Array.from({length:6},(_,i)=>'radar-frame-'+i+'.png');
-  this.frameIndex=0;this.pendingFrame=null;this.pageViews=[];this.parts=[[],[],[]];
-  this.bars=[];this.indicators=[];
-  this.cityLabels=[];this.lastCrown=0;
+  this.radarFrames=[];this.radarTimes=[];this.radarFetchedAt=0;
+  this.radarSyncing=false;this.radarError=null;this.radarEpoch=0;
+  this.frameIndex=0;this.pendingFrame=null;
+  this.pageViews=[];this.parts=[[],[],[]];
+  this.bars=[];this.indicators=[];this.cityLabels=[];this.lastCrown=0;
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
   this.lastAlertKey=null;
   try{
-   const saved=JSON.parse(storage.getItem('buienradar.radar-frames.v1')||'null');
-   const time=Date.parse(saved&&saved.generatedAt);
-   if(saved&&Array.isArray(saved.frames)&&saved.frames.length>=1&&
-    time>0&&Date.now()-time<45*60000&&
-    saved.frames.every(p=>typeof p==='string'&&p.startsWith('data://'))){
-    this.radarPaths=saved.frames;
-    this.radarStamp=saved.generatedAt;
-    this.radarMode=saved.mode==='snapshot'?'snapshot':'animation';
+   const old=JSON.parse(storage.getItem('buienradar.future-radar.v1')||'null');
+   if(old&&old.source==='KMI'&&Date.now()-old.fetchedAt>=0&&
+      Date.now()-old.fetchedAt<12*60000&&Array.isArray(old.frames)){
+    const current=old.frames.filter(f=>f&&f.path&&f.validAt>Date.now()&&
+     typeof f.path==='string'&&f.path.startsWith('data://'));
+    if(current.length){
+     this.radarFrames=current;this.radarTimes=current.map(f=>f.validAt);
+     this.radarFetchedAt=old.fetchedAt;
+    }
    }
   }catch(_){}
   // The documented horizontal swiper takes width and count only.
@@ -109,22 +108,24 @@ Page(BasePage({
    });
    this.cityLabels.push(button);return button;
   };
-  // RADAR — uninterrupted animated map. Frame timestamp is bottom-center,
-  // already rasterized into the source; the crown provides zoom.
+  // KMI official 3h future PNG overlays, over a matching bundled Belgian
+  // map. No bundled historical rain images are ever shown.
+  this.radarBase=create(0,ui.widget.IMG,{
+   x:0,y:54,w:SIZE,h:368,src:'kmi-be-map.png',auto_scale:true
+  });
   this.radarWidget=create(0,ui.widget.IMG,{
-   x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true
+   x:0,y:54,w:SIZE,h:368,src:'kmi-clear.png',auto_scale:true
   });
   this.city=cityButton(0);
-  // A single actionable loading/error label. Never call an old frame current.
+  this.radarTime=txt(0,174,402,132,36,'KMI +3u',23,C.white);
   this.radarLabel=create(0,ui.widget.BUTTON,{
-   x:125,y:86,w:230,h:43,text:'RADAR OPHALEN...',
-   text_size:17,color:C.white,normal_color:0x112a3c,
-   press_color:0x246586,radius:19,
+   x:123,y:91,w:234,h:49,text:'VOORSPELLING LADEN',
+   text_size:17,color:C.white,normal_color:0x102839,
+   press_color:0x246586,radius:22,
    click_func:()=>void this.requestRadar(true)
   });
+  this.applyRadarFrame();
   this.updateRadarLabel();
-  // The uncalibrated yellow marker is intentionally NOT drawn: Buienradar's
-  // Belgium image API doesn't expose reliable map bounds/projection metadata.
 
   // RAIN — large status, simple horizon selector, uncluttered chart.
   cityButton(1);
@@ -218,179 +219,134 @@ Page(BasePage({
    const inbox=this.transfer.getInbox(),handled={};
    const handle=()=>{
     const file=inbox.getNextFile();
-    if(!file||!file.params||
-       !['buienradar-frame','buienradar-snapshot'].includes(file.params.kind))return;
-    const snapshot=file.params.kind==='buienradar-snapshot';
-    const index=Number(file.params.frameIndex);
-    if(!Number.isInteger(index)||index<0||index>=12)return;
-    const id=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
-    if(handled[id]){
-     // Zepp may return a new FileObject for the FILE event rather than
-     // mutating the NEWFILE object. Replace the pending reference.
-     const pending=handled[id];
-     if(file.filePath)pending.file=file;
-     if(!pending.done&&pending.file.readyState==='transferred')
-      pending.done=pending.load();
-     return;
-    }
-    const entry={file,done:false,load:()=>{
-     const file=entry.file;
-     // Transfer status can arrive before the destination filePath.
-     if(this.disposed||!file.filePath)return false;
-     const stamp=Date.parse(file.params.generatedAt);
-     if(!Number.isFinite(stamp)||stamp>Date.now()+60000||
-         Date.now()-stamp>35*60000)return;
-     if(snapshot){
-      this.radarStamp=file.params.generatedAt;
-      this.radarMode='snapshot';
-      this.lastSnapshotReceiptAt=Date.now();
-      this.radarStage='ready';
-      this.radarPaths=[file.filePath];
-      this.frameIndex=0;
-      this.radarError=null;
-      this.saveRadarCache();
-      this.applyRadarFrame();
-      this.updateRadarLabel();
-      return true;
-     }
-     if(this.radarStamp!==file.params.generatedAt)return false;
-     this.liveFrames[index]=file.filePath;
-     const ready=this.liveFrames.filter(Boolean).length;
-     // Never switch to an incomplete download by replacing the existing frames.
-     if(ready>=2){
-      const contiguous=[];
-      for(const p of this.liveFrames){if(!p)break;contiguous.push(p);}
-      if(contiguous.length>=2){
-       this.radarPaths=contiguous;
-       this.radarMode='animation';
-       this.radarStage='ready';
-       this.radarError=null;
-       this.saveRadarCache();
-       this.updateRadarLabel();
-      }
-     }
-     if(this.pendingFrame&&this.pendingFrame.index===index){
+    if(!file?.params||file.params.kind!=='future-radar-frame'||
+       file.params.source!=='KMI')return;
+    const idx=Number(file.params.frameIndex);
+    const validAt=Number(file.params.validAt);
+    if(!Number.isInteger(idx)||idx<0||idx>=12||
+      !Number.isFinite(validAt)||validAt<=Date.now())return;
+    const id=String(file.sessionId||file.fileName||file.filePath||idx)+'/'+idx;
+    let record=handled[id];
+    if(!record){record={file,done:false};handled[id]=record;}
+    else if(file.filePath)record.file=file;
+    const process=()=>{
+     const item=record.file;
+     if(record.done||!item.filePath||item.readyState!=='transferred')return;
+     // Accept only frames belonging to the current verified time sequence.
+     if(this.radarTimes[idx]!==validAt)return;
+     const frame={path:item.filePath,validAt,
+      time:file.params.validTime};
+     this.radarFrames[idx]=frame;
+     record.done=true;
+     this.saveRadarCache();
+     this.applyRadarFrame();
+     this.updateRadarLabel();
+     if(this.pendingFrame&&this.pendingFrame.index===idx){
       this.pendingFrame.resolve();this.pendingFrame=null;
      }
-     return true;
-    }};
-    handled[id]=entry;
-    if(file.readyState==='transferred'){
-     entry.done=entry.load();return;
-    }
-    if(typeof file.on==='function')file.on('change',event=>{
-     const state=event&&event.data&&event.data.readyState||file.readyState;
-     if(state==='transferred')entry.done=entry.load();
-     else if(state==='error'||state==='canceled'){
-      if(this.pendingFrame&&this.pendingFrame.index===index){
-       this.pendingFrame.reject(Error('BLE ontvangst mislukt'));this.pendingFrame=null;
-      }
-     }
-    });
+    };
+    record.process=process;
+    process();
+    if(typeof file.on==='function')file.on('change',process);
    };
    const sweep=()=>{
-    for(const entry of Object.values(handled))
-     if(!entry.done&&entry.file.readyState==='transferred'){
-      entry.done=entry.load();
-     }
+    for(const record of Object.values(handled))
+     if(!record.done&&record.file.readyState==='transferred')
+      record.process?.();
    };
    inbox.on('NEWFILE',()=>{handle();sweep();});
-   inbox.on('FILE',()=>{sweep();handle();sweep();});
-  }catch(_){/* Offline bundled animation remains playable. */}
+   inbox.on('FILE',()=>{handle();sweep();});
+  }catch(e){this.radarError='ONTVANGST: '+String(e.message||e);}
  },
  isRadarFresh(){
-  const stamp=Date.parse(this.radarStamp);
-  return Number.isFinite(stamp)&&stamp<=Date.now()+60000&&
-   Date.now()-stamp<20*60000;
+  return this.radarFetchedAt>0&&
+   Date.now()-this.radarFetchedAt>=0&&
+   Date.now()-this.radarFetchedAt<12*60000&&
+   this.radarFrames.some(f=>f&&f.validAt>Date.now());
  },
  updateRadarLabel(){
   if(!this.radarLabel)return;
-  const ready=this.isRadarFresh()&&
-   ['snapshot','animation'].includes(this.radarMode);
-  let text='';
-  if(!ready){
-   if(this.radarSyncing)text='RADAR OPHALEN...';
-   else if(this.radarError){
-    const code=this.radarError.includes('DOWNLOAD')?'DOWNLOAD':
-     this.radarError.includes('CONVERT')?'AFBEELDING':
-     this.radarError.includes('TRANSFER')?'OVERDRACHT':
-     this.radarError.includes('ONTVANGST')?'ONTVANGST':'VERBINDING';
-    text=code+' MISLUKT · TIK';
-   }else text='RADAR VERNIEUWEN';
+  const good=this.isRadarFresh();
+  let caption='';
+  if(!good){
+   if(this.radarSyncing)caption='VOORSPELLING LADEN';
+   else if(this.radarError)caption='OPHALEN MISLUKT · TIK';
+   else caption='VOORSPELLING OPHALEN';
   }
-  this.radarLabel.setProperty(ui.prop.TEXT,text);
-  this.radarLabel.setProperty(ui.prop.VISIBLE,!ready);
+  this.radarLabel.setProperty(ui.prop.TEXT,caption);
+  this.radarLabel.setProperty(ui.prop.VISIBLE,!good);
  },
  saveRadarCache(){
-  try{storage.setItem('buienradar.radar-frames.v1',JSON.stringify({
-   frames:this.radarPaths,generatedAt:this.radarStamp,mode:this.radarMode
-  }));}catch(_){}
+  try{
+   if(!this.radarFetchedAt)return;
+   storage.setItem('buienradar.future-radar.v1',JSON.stringify({
+    source:'KMI',fetchedAt:this.radarFetchedAt,
+    frames:this.radarFrames.filter(f=>f&&f.path&&f.validAt>Date.now())
+   }));
+  }catch(_){}
  },
  nextRadarFrame(){
-  if(this.disposed||!this.radarPaths.length||
-     this.radarMode!=='animation'||!this.isRadarFresh())return;
-  this.frameIndex=(this.frameIndex+1)%this.radarPaths.length;
+  if(!this.isRadarFresh())return;
+  const frames=this.radarFrames.filter(f=>f&&f.validAt>Date.now());
+  if(frames.length<2)return;
+  this.frameIndex=(this.frameIndex+1)%frames.length;
   this.applyRadarFrame();
  },
- async phone(msg,timeout=20000){
-  if(!this.messaging||typeof this.messaging.request!=='function')
-   throw Error('Zepp telefoonverbinding ontbreekt');
-  return this.messaging.request(msg,{timeout});
+ async phone(message,timeout=20000){
+  if(!this.messaging?.request)throw Error('Geen Zepp telefoonverbinding');
+  return this.messaging.request(message,{timeout});
  },
- async downloadSingleFrame(index){
-  const res=await this.phone({method:'radar.frame',params:{index}},10000);
-  if(!res||res.ok!==true)throw Error(res&&res.error||'Frame niet beschikbaar');
-  if(this.liveFrames[index])return;
-  await new Promise((resolve,reject)=>{
-   const timer=setTimeout(()=>{
-    if(this.pendingFrame&&this.pendingFrame.index===index)this.pendingFrame=null;
-    reject(Error('Frameoverdracht verlopen'));
-   },46000);
-   this.pendingFrame={index,
-    resolve:()=>{clearTimeout(timer);resolve();},
-    reject:e=>{clearTimeout(timer);reject(e);}
-   };
-   if(this.liveFrames[index]){
-    this.pendingFrame.resolve();this.pendingFrame=null;
-   }
+ async downloadFutureFrame(index){
+  const t=this.radarTimes[index];
+  if(!Number.isFinite(t)||t<=Date.now())return;
+  // Set up the waiter BEFORE requesting transfer, preventing a BLE race.
+  let resolvePending,rejectPending;
+  const waiter=new Promise((resolve,reject)=>{
+   const timeout=setTimeout(()=>{
+    if(this.pendingFrame?.index===index)this.pendingFrame=null;
+    reject(Error('OVERDRACHT: radarframe ontbreekt'));
+   },36000);
+   resolvePending=()=>{clearTimeout(timeout);resolve();};
+   rejectPending=e=>{clearTimeout(timeout);reject(e);};
   });
+  this.pendingFrame={index,resolve:resolvePending,reject:rejectPending};
+  const result=await this.phone({method:'radar.frame',params:{index}},11000);
+  if(!result?.ok){
+   this.pendingFrame=null;
+   // Avoid unhandled rejection if the service declines before the waiter is used.
+   resolvePending();
+   throw Error(result?.error||'TRANSFER: radarframe niet gestart');
+  }
+  await waiter;
  },
  async requestRadar(force=false){
   if(this.disposed||this.radarSyncing)return;
-  if(!force&&this.radarMode==='snapshot'&&this.isRadarFresh())return;
-  this.radarSyncing=true;
-  this.radarError=null;
-  this.radarStage='starting';
-  this.updateRadarLabel();
-  const previousReceipt=this.lastSnapshotReceiptAt;
+  if(!force&&this.isRadarFresh()&&this.radarFrames.filter(Boolean).length>=5)return;
+  this.radarSyncing=true;this.radarError=null;this.updateRadarLabel();
   try{
-   // No GitHub, no manifest. The phone downloads a Buienradar PNG directly,
-   // converts it, and sends it over Bluetooth to the watch.
-   const result=await this.phone({method:'radar.snapshot'},15000);
-   if(!result||(!result.ok&&!result.busy))
-    throw Error(result&&result.error||'DOWNLOAD: geen verbinding');
-   const deadline=Date.now()+65000;
-   while(!this.disposed&&Date.now()<deadline){
-    if(this.lastSnapshotReceiptAt>previousReceipt&&
-       this.radarMode==='snapshot'&&this.isRadarFresh()){
-     this.radarStage='ready';
-     return;
+   const answer=await this.phone({method:'radar.forecast'},17000);
+   if(!answer?.ok||!Array.isArray(answer.frames)||!answer.frames.length)
+    throw Error(answer?.error||'Geen toekomstige radar beschikbaar');
+   const times=answer.frames.map(f=>Number(f.validAt));
+   if(times.some(t=>!Number.isFinite(t))||times[0]<=Date.now())
+    throw Error('Geen geldige toekomstige radartijden');
+   this.radarTimes=times;
+   this.radarFetchedAt=Number(answer.fetchedAt);
+   this.radarFrames=new Array(times.length).fill(null);
+   this.frameIndex=0;
+   this.applyRadarFrame(); // blank but never display old pixels
+   for(let i=0;i<times.length&&!this.disposed;i++){
+    if(times[i]<=Date.now())continue;
+    try{await this.downloadFutureFrame(i);}
+    catch(e){
+     if(this.radarFrames.filter(Boolean).length===0)throw e;
+     break; // Partial valid future animation is better than stale data.
     }
-    const progress=await this.phone({method:'radar.status'},8000);
-    if(progress&&progress.stage){
-     this.radarStage=progress.stage;
-     if(progress.stage==='failed')
-      throw Error(progress.error||'DOWNLOAD: mislukt');
-     this.updateRadarLabel();
-    }
-    await new Promise(resolve=>setTimeout(resolve,1800));
    }
-   if(!this.disposed)throw Error('ONTVANGST: geen bruikbare radar ontvangen');
   }catch(e){
-   if(!this.disposed)this.radarError=String(e&&e.message||e);
+   this.radarError=String(e.message||e);
   }finally{
-   this.radarSyncing=false;
-   this.updateRadarLabel();
+   this.radarSyncing=false;this.updateRadarLabel();
   }
  },
  draw(){
@@ -504,18 +460,27 @@ Page(BasePage({
   const steps=[1,1.25,1.5,1.85];
   const current=steps.indexOf(this.zoom||1);
   this.zoom=steps[Math.max(0,Math.min(steps.length-1,current+direction))];
-  // Without georeferencing, center the display zoom at the map center,
-  // not at an invented location coordinate.
   this.applyRadarFrame();
  },
  applyRadarFrame(){
-  const z=this.zoom||1,side=Math.round(480*z);
+  if(!this.radarBase||!this.radarWidget)return;
+  const factor=this.zoom||1;
+  const w=Math.round(480*factor),h=Math.round(368*factor);
+  const geometry={x:Math.round((480-w)/2),y:Math.round(54+(368-h)/2),
+   w,h,auto_scale:true};
+  this.radarBase.setProperty(ui.prop.MORE,geometry);
+  const available=this.radarFrames.filter(f=>f&&f.validAt>Date.now());
+  const fresh=this.isRadarFresh()&&available.length>0;
+  const frame=fresh?available[this.frameIndex%available.length]:null;
   this.radarWidget.setProperty(ui.prop.MORE,{
-   x:Math.round((480-side)/2),y:Math.round((480-side)/2),
-   w:side,h:side,
-   src:this.radarPaths[this.frameIndex]||this.radarPaths[0],
-   auto_scale:true
+   ...geometry,src:frame?.path||'kmi-clear.png'
   });
+  if(this.radarTime){
+   const clock=frame?new Date(frame.validAt).toLocaleTimeString('nl-BE',{
+    hour:'2-digit',minute:'2-digit'
+   }):'KMI +3u';
+   this.radarTime.setProperty(ui.prop.TEXT,clock);
+  }
  },
  renderForecast(){
    const sum=forecastFresh(this.rain)?
