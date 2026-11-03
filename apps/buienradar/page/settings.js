@@ -41,7 +41,10 @@ Page(BasePage({
   text(153,364,174,25,'vooraf',17,MUTED);
   button(88,328,55,55,'−',31,()=>this.changeLead(-1));
   button(337,328,55,55,'+',31,()=>this.changeLead(1));
-  this.testButton=button(154,408,172,48,'Test melding',20,
+  this.gifResult=text(119,383,242,18,'',15,MUTED);
+  this.gifTestButton=button(122,405,113,43,'GIF-test',17,
+   ()=>void this.testGif());
+  this.testButton=button(245,405,113,43,'Test melding',16,
    ()=>this.testNotification());
  },
  onResume(){
@@ -73,6 +76,21 @@ Page(BasePage({
   this.alert.lead=LEADS[Math.max(0,Math.min(2,index+direction))];
   this.leadText.setProperty(ui.prop.TEXT,this.alert.lead+' min');
   this.persist();
+ },
+ async testGif(){
+  this.gifTestButton.setProperty(ui.prop.TEXT,'Bezig...');
+  this.gifResult.setProperty(ui.prop.TEXT,'Buienradar GIF testen...');
+  try{
+   if(typeof this.request!=='function')throw Error('Geen telefoonverbinding');
+   const result=await this.request({method:'radar.gifTest'});
+   this.gifTestButton.setProperty(ui.prop.TEXT,result?.ok?'GIF gelezen':'GIF fout');
+   this.gifResult.setProperty(ui.prop.TEXT,
+    result?.ok?'Conversie OK; animatie nog niet bewezen':
+     String(result?.error||'Onbekende fout').slice(0,38));
+  }catch(e){
+   this.gifTestButton.setProperty(ui.prop.TEXT,'GIF fout');
+   this.gifResult.setProperty(ui.prop.TEXT,String(e.message||e).slice(0,38));
+  }
  },
  testNotification(){
   try{

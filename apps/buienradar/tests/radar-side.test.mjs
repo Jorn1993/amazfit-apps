@@ -98,3 +98,20 @@ test('Source code never uses a GitHub runtime radar cache',()=>{
  const src=fs.readFileSync(new URL('../app-side/index.js',import.meta.url),'utf8');
  assert.ok(!/raw\.githubusercontent\.com|RADAR_CACHE_BASE|radar\.manifest/.test(src));
 });
+
+
+test('Phone compatibility probe fetches the genuine Buienradar GIF, not KMI',async()=>{
+ const s=create();
+ const response=await s.call('radar.gifTest');
+ assert.equal(response.ok,true);
+ assert.equal(response.stage,'converted');
+ assert.match(s.sourceUrl(),/^https:\/\/image\.buienradar\.nl\/2\.0\/image\/animation\//);
+ assert.match(s.sourceUrl(),/History=0&Forecast=19/);
+ assert.equal(s.count(),0); // Never treat GIF conversion as actual BLE animation.
+});
+test('GIF conversion error is reported separately from radar forecast',async()=>{
+ const s=create({convert:false});
+ const answer=await s.call('radar.gifTest');
+ assert.equal(answer.ok,false);
+ assert.match(answer.error,/unsupported/);
+});

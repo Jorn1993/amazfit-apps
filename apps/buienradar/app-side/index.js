@@ -6,6 +6,11 @@ import {kmiForecastUrl,parseFutureFrames} from './future-radar.js';
 const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
 const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
+// Genuine Buienradar Belgium +3h GIF: a *format compatibility probe* only.
+// The KMI radar implementation remains untouched until actual frame decoding works.
+const BUIENRADAR_GIF='https://image.buienradar.nl/2.0/image/animation/'+
+ 'RadarMapRainWebmercatorBE?height=240&width=240&renderBackground=True'+
+ '&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1';
 
 let rainCache=null,weatherCache=null;
 function responseBody(result){
@@ -185,6 +190,23 @@ AppSideService(BaseSideService({
    }
    if(req.method==='radar.status'){
     res(null,{ok:true,...radarState,busy:radarBusy});return;
+   }
+   if(req.method==='radar.gifTest'){
+    // Only the real Zepp phone runtime can answer whether image.convert
+    // accepts an animated GIF. Success here does NOT mean frame animation.
+    if(radarBusy){res(null,{ok:false,error:'Radaroverdracht bezig'});return;}
+    radarBusy=true;
+    try{
+     const input=await downloadRadar(BUIENRADAR_GIF,0,'gif-probe');
+     if(!image?.convert)throw Error('GIF-CONVERT: niet beschikbaar');
+     const converted=await limited(image.convert({filePath:input}),
+      18000,'GIF-CONVERT');
+     if(!converted?.targetFilePath)throw Error('GIF-CONVERT: geen resultaat');
+     res(null,{ok:true,stage:'converted',note:'GIF acceptatie; animatie nog niet bewezen'});
+    }catch(e){
+     res(null,{ok:false,error:String(e.message||e).slice(0,100)});
+    }finally{radarBusy=false;radarTask=null;}
+    return;
    }
    if(req.method!=='rain.forecast')
     throw Error('Unsupported request');

@@ -1,6 +1,6 @@
 # Buienradar for Amazfit Balance 2
 
-**1.0.2 · Zepp OS 3 · privéprototype**
+**1.0.3 · Zepp OS 3 · privéprototype**
 
 ## Radar: uitsluitend toekomstige beelden, zonder GitHub
 
@@ -19,6 +19,10 @@ De **tijd** onderaan is het voorspelde tijdstip van het zichtbare frame; niet de
 Versie 1.0.2 herstelt de directe `BasePage.request()`-aanroepen voor regen, weer, locatie en radarmetadata. De oude `this.messaging.request()` bestaat niet in de publieke ZML BasePage API en veroorzaakte een appbrede datastoring. De regenpagina toont nu de werkelijke foutreden in plaats van een generieke melding. Dit is nog geen bevestiging van correcte aflevering op een fysiek horloge.
 
 **Bronkeuze:** de huidige KMI-radar is niet de gewenste Buienradar-animatie. Deze code wordt niet als oplossing voor de echte Buienradar +3u-radar beschouwd: de officiële Buienradar-GIF vraagt een betrouwbare frameconverter voordat Zepp de toekomstige frames als afbeeldingen kan tonen.
+
+## Buienradar GIF-compatibiliteitsproef (1.0.3)
+
+In **Instellingen → GIF-test** kan de gebruiker nu de officiële Buienradar Belgium +3u-GIF via de Zepp-telefoonservice downloaden en door de native `image.convert()` laten verwerken. Het horloge toont `GIF gelezen` of de echte fout (bijvoorbeeld `GIF-CONVERT`). Dit is uitdrukkelijk **geen bewijs dat de animatie kan worden afgespeeld**: zelfs een geslaagde conversie kan alleen het eerste frame opleveren. De volledige Buienradar GIF-naar-frames-implementatie blijft een open issue. CI-tests gebruiken mocks en kunnen de native decoder niet valideren.
 
 ## De andere schermen
 
