@@ -1,1 +1,1 @@
-zpkd1://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/buienradar-v0.9.2.zpk
+zpkd1://raw.githubusercontent.com/Jorn1993/amazfit-apps/main/apps/buienradar/public/buienradar-v0.9.3.zpk
