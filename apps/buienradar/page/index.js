@@ -1,8 +1,6 @@
 import * as ui from '@zos/ui';
 import {setScrollMode,getSwiperIndex,SCROLL_MODE_SWIPER_HORIZONTAL} from '@zos/page';
 import {LocalStorage} from '@zos/storage';
-import {readFileSync,writeFileSync} from '@zos/fs';
-import {BuienradarGif,toZeppImage} from './gif-decoder.js';
 import {push} from '@zos/router';
 import {onDigitalCrown,offDigitalCrown,KEY_HOME} from '@zos/interaction';
 import {set as setAlarm, cancel as cancelAlarm} from '@zos/alarm';
@@ -65,13 +63,14 @@ Page(BasePage({
   this.radarFallback=null;this.radarDisplayed=false;
   this.radarRequestAt=0;this.frameIndex=0;this.statusTicks=0;
   this.radarStage='idle';this.currentFrame=null;this.currentFetchedAt=0;
+  this.radarActiveGeneration=-1;
   this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];this.cityLabels=[];this.lastCrown=0;
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
   this.lastAlertKey=null;
   // Never read the old KMI cache. Only genuine, recent Buienradar frames.
   try{
-   const old=JSON.parse(storage.getItem('buienradar.animation.v2')||'null');
+   const old=JSON.parse(storage.getItem('buienradar.animation.v3')||'null');
    const now=Date.now();
    if(old?.source==='Buienradar'&&old.horizonMinutes===180&&
       now>=old.fetchedAt&&now-old.fetchedAt<12*60000&&
@@ -241,7 +240,7 @@ Page(BasePage({
   // dequeued FileObject. Do not create a second TransferFile/getNextFile.
   if(!file?.params||file.params.source!=='Buienradar')return;
   const kind=file.params.kind;
-  if(kind!=='buienradar-forecast-gif'&&
+  if(kind!=='buienradar-native-frame'&&
      kind!=='buienradar-current-frame')return;
   if(this.disposed)return;
   const fetchedAt=Number(file.params.fetchedAt),now=Date.now();
@@ -270,7 +269,7 @@ Page(BasePage({
     delete this.incomingRadarFiles[id];return;
    }
    delete this.incomingRadarFiles[id];
-   this.radarStage=kind==='buienradar-current-frame'?'current-ready':'decode';
+   this.radarStage=kind==='buienradar-current-frame'?'current-ready':'frame-ready';
    if(kind==='buienradar-current-frame'){
     this.currentFrame={path:file.filePath};
     this.currentFetchedAt=fetchedAt;
@@ -280,7 +279,7 @@ Page(BasePage({
     this.applyRadarFrame();
     this.updateRadarLabel();
    }else{
-    this.decodeRadar(file.filePath,fetchedAt);
+    this.acceptNativeRadarFrame(file,fetchedAt);
    }
   };
   // A completed file may arrive through ZML after the NEWFILE event.
@@ -288,54 +287,29 @@ Page(BasePage({
    deliver(ev?.data?.readyState||file.readyState));
   deliver(file.readyState);
  },
- decodeRadar(path,fetchedAt){
-  const epoch=++this.radarEpoch;
-  let decoder;
-  try{
-   const data=readFileSync({path});
-   if(!data)throw Error('GIF-bestand niet leesbaar');
-   decoder=new BuienradarGif(data);
-   if(decoder.width!==320||decoder.height!==320)
-    throw Error('Onbekend radarformaat');
-  }catch(e){
-   this.radarError='GIF: '+String(e.message||e);
-   this.radarSyncing=false;this.updateRadarLabel();
-   return;
+ acceptNativeRadarFrame(file,fetchedAt){
+  // The phone has already converted this RGB frame using Zepp image.convert.
+  // No watch-side proprietary image encoder, which caused coloured noise.
+  const index=Number(file.params.frameIndex),generation=Number(file.params.generation);
+  if(!Number.isInteger(index)||index<0||index>=24||
+     !Number.isInteger(generation)||generation<0){
+   this.radarError='ONTVANGST: ongeldig radarframe';
+   this.updateRadarLabel();return;
   }
-  const received=[];
-  let index=0;
-  const step=()=>{
-   if(this.disposed||epoch!==this.radarEpoch)return;
-   try{
-    const frame=decoder.nextFrame();
-    if(!frame){
-     if(received.length<2)throw Error('Geen bewegende Buienradar-beelden');
-     this.radarSyncing=false;this.radarError=null;
-     this.saveRadarCache();this.updateRadarLabel();
-     return;
-    }
-    const bytes=toZeppImage(frame.width,frame.height,frame.rgb);
-    const output='data://download/buienradar-'+fetchedAt+'-'+index+'.png';
-    writeFileSync({path:output,data:bytes});
-    received.push({path:output});
-    index++;
-    // Display the FIRST verified future frame immediately. Animation begins
-    // once the second frame arrives, rather than leaving a blank map.
-    if(received.length>=1){
-     this.radarFrames=received.slice();
-     this.radarFetchedAt=fetchedAt;
-     this.radarFallback=null;this.frameIndex%=received.length;
-     this.applyRadarFrame();this.saveRadarCache();
-     this.updateRadarLabel();
-    }
-    // Yield to the watch UI after each frame to avoid a long blocked screen.
-    setTimeout(step,30);
-   }catch(e){
-    this.radarError='DECODER: '+String(e.message||e).slice(0,80);
-    this.radarSyncing=false;this.updateRadarLabel();
-   }
-  };
-  step();
+  if(generation<this.radarActiveGeneration)return;
+  if(generation!==this.radarActiveGeneration){
+   this.radarActiveGeneration=generation;
+   this.radarFrames=[];this.radarFetchedAt=fetchedAt;this.frameIndex=0;
+  }
+  if(!this.radarFrames.some(frame=>frame.frameIndex===index))
+   this.radarFrames.push({path:file.filePath,frameIndex:index});
+  this.radarFrames.sort((a,b)=>a.frameIndex-b.frameIndex);
+  this.radarFetchedAt=Math.min(this.radarFetchedAt,fetchedAt);
+  this.radarFallback=null;
+  if(this.radarFrames.length>=2){
+   this.radarSyncing=false;this.radarError=null;
+  }
+  this.applyRadarFrame();this.saveRadarCache();this.updateRadarLabel();
  },
  isRadarFresh(){
   const age=Date.now()-this.radarFetchedAt;
@@ -359,7 +333,8 @@ Page(BasePage({
    'current-ready':'VOORSPELLING LADEN',
    'gif-download':'ANIMATIE DOWNLOADEN',
    'gif-transfer':'ANIMATIE VERSTUREN',
-   transferred:'BEELDEN ONTVANGEN',decode:'BEELDEN VERWERKEN'
+   transferred:'BEELDEN ONTVANGEN','gif-read':'GIF LEZEN',
+   'frame-ready':'VOORSPELLING ONTVANGEN'
   };
   const loading=stageNames[this.radarStage]||'BUIENRADAR LADEN';
   const label=forecast?'':this.radarError?'OPNIEUW PROBEREN':
@@ -389,7 +364,7 @@ Page(BasePage({
  saveRadarCache(){
   if(!this.isRadarFresh())return;
   try{
-   storage.setItem('buienradar.animation.v2',JSON.stringify({
+   storage.setItem('buienradar.animation.v3',JSON.stringify({
     source:'Buienradar',horizonMinutes:180,fetchedAt:this.radarFetchedAt,
     frames:this.radarFrames
    }));
@@ -423,12 +398,12 @@ Page(BasePage({
    if(this.radarStage!=='decode'&&this.radarStage!=='current-ready')
     this.radarStage=result.stage||this.radarStage;
    if(result.stage==='failed')throw Error(result.error||'overdracht mislukt');
-   if(Date.now()-this.radarRequestAt>65000)
+   if(Date.now()-this.radarRequestAt>155000&&!this.isRadarFresh())
     throw Error('RADAR: geen afbeelding ontvangen ('+this.radarStage+')');
    // A phone-side file transfer can complete even if no matching ZML
    // onReceivedFile callback ever reaches the watch. Report that case.
    if(result.stage==='transferred'&&!this.hasCurrentRadar()&&
-      !this.isRadarFresh()&&Date.now()-this.radarRequestAt>20000)
+      !this.isRadarFresh()&&Date.now()-this.radarRequestAt>40000)
     throw Error('Bluetooth: geen radarbestand ontvangen');
    this.updateRadarLabel();
   }catch(e){
