@@ -6,6 +6,12 @@ import {RADAR_CACHE_BASE,parseFrameManifest,frameUrl} from './radar-feed.js';
 const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
 const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
+// Official current single-image endpoint; independent of GitHub cron.
+// Use when the verified animated feed is missing or older than 35 minutes.
+// renderText=False: the single image has no misleading historical time label.
+const RADAR_SINGLE='https://image.buienradar.nl/2.0/image/single/RadarMapRainWebmercatorBE'+
+ '?height=320&width=320&renderBackground=True&renderBranding=False&renderText=False';
+
 let rainCache=null,weatherCache=null;
 function responseBody(result){
  const b=result&&result.body;
@@ -83,7 +89,9 @@ function bounded(promise,ms,step,cancel){
  });
 }
 async function latestRadarManifest(){
- const response=await fetch({url:RADAR_CACHE_BASE+'/manifest.json',method:'GET'});
+ // Bust the CDN cache for mutable manifest references.
+ const url=RADAR_CACHE_BASE+'/manifest.json?checked='+Math.floor(Date.now()/60000);
+ const response=await fetch({url,method:'GET'});
  if(resultStatus(response)!==200)throw Error('CACHE: HTTP '+resultStatus(response));
  return parseFrameManifest(response.body);
 }
@@ -120,11 +128,13 @@ function waitForTransfer(file){
   check(file.readyState);
  }),37000,'TRANSFER',()=>{try{file?.cancel?.();}catch(_){}});
 }
-async function sendFrame(index,id){
+async function sendFrame(index,id,snapshot=null){
  try{
-  const file=radarManifest.frames[index];
+  const file=snapshot?null:radarManifest.frames[index];
   updateRadar('download',null,id,index);
-  const raw=await downloadFrame(frameUrl(file),index,id);
+  const url=snapshot?RADAR_SINGLE+'&checked='+Math.floor(Date.now()/300000):
+   frameUrl(file)+'?version='+encodeURIComponent(radarManifest.generatedAt);
+  const raw=await downloadFrame(url,index,id);
   updateRadar('convert',null,id,index);
   if(typeof image==='undefined'||typeof image.convert!=='function')
    throw Error('CONVERT: Zepp image converter ontbreekt');
@@ -139,8 +149,9 @@ async function sendFrame(index,id){
   const outbox=transferFile.getOutbox();
   if(!outbox?.enqueueFile)throw Error('TRANSFER: ontbrekende outbox');
   const task=outbox.enqueueFile(converted.targetFilePath,{
-   kind:'buienradar-frame',frameIndex:index,requestId:id,
-   generatedAt:radarManifest.generatedAt
+   kind:snapshot?'buienradar-snapshot':'buienradar-frame',
+   frameIndex:index,requestId:id,
+   generatedAt:snapshot||radarManifest.generatedAt
   });
   await waitForTransfer(task);
   updateRadar('transferred',null,id,index);
@@ -156,6 +167,15 @@ function beginFrame(index){
  updateRadar('starting',null,id,index);
  void sendFrame(index,id);
  return {...radarState,ok:true};
+}
+function beginSnapshot(){
+ if(radarBusy)return {ok:false,error:'SNAPSHOT: overdracht bezig'};
+ radarBusy=true;
+ const id=++radarGeneration;
+ const stamp=new Date().toISOString();
+ updateRadar('snapshot',null,id,0);
+ void sendFrame(0,id,stamp);
+ return {ok:true,generatedAt:stamp,requestId:id};
 }
 function currentRadarState(){
  if(radarBusy&&Date.now()-radarState.updatedAt>75000){
@@ -184,6 +204,9 @@ AppSideService(BaseSideService({
    }
    if(req.method==='radar.frame'){
     res(null,beginFrame(Number(req.params&&req.params.index)));return;
+   }
+   if(req.method==='radar.snapshot'){
+    res(null,beginSnapshot());return;
    }
    if(req.method==='radar.status'){
     res(null,currentRadarState());return;
