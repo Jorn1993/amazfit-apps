@@ -5,7 +5,7 @@ import vm from 'node:vm';
 function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
  let page,crown,swipe,stopped=0;
  const requests=[],cache=new Map(),savedFiles=new Map();
- if(cacheRadar)cache.set('buienradar.animation.v2',JSON.stringify(cacheRadar));
+ if(cacheRadar)cache.set('buienradar.animation.v3',JSON.stringify(cacheRadar));
  if(oldKmi)cache.set('buienradar.future-radar.v1',JSON.stringify(oldKmi));
  function createWidget(type,options){
   const widget={type,values:{...options},setProperty(key,value){
@@ -25,14 +25,6 @@ function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
   nextHourMm:0,
   station:{temperature:11,windKmh:12,direction:'NO',weatherDescription:'Bewolkt'}};
  let uiPage=0;
- class FakeGif{
-  constructor(data){assert.ok(data);this.width=320;this.height=320;this.i=0;}
-  nextFrame(){
-   if(this.i===3)return null;
-   const f={width:320,height:320,rgb:new Uint8Array(320*320*3)};
-   f.rgb.fill(++this.i*30);return f;
-  }
- }
  const source=fs.readFileSync(new URL('../page/index.js',import.meta.url),'utf8')
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(source,{
@@ -41,9 +33,6 @@ function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
   SCROLL_MODE_SWIPER_HORIZONTAL:'horizontal',push:()=>{},
   onDigitalCrown:({callback})=>{crown=callback;},offDigitalCrown:()=>{},KEY_HOME:1,
   LocalStorage:class{getItem(k){return cache.get(k);}setItem(k,v){cache.set(k,v);}},
-  readFileSync:({path})=>{assert.equal(path,'data://download/radar.gif');return new Uint8Array([71,73,70]);},
-  writeFileSync:({path,data})=>savedFiles.set(path,data),
-  BuienradarGif:FakeGif,toZeppImage:(_,__,rgb)=>rgb.buffer,
   setInterval:()=>99,clearInterval:()=>{stopped++;},
   setTimeout:(fn,ms)=>{if(ms<=50)queueMicrotask(fn);return 22;},
   clearTimeout:()=>{},
@@ -58,9 +47,11 @@ function launch({connected=true,cacheRadar=null,oldKmi=null}={}){
   if(request.method==='config.get')return {ok:true,location:rain.location};
   return {ok:false,error:'unknown'};
  };
- const receive=(fetchedAt=Date.now())=>page.onReceivedFile({
-  params:{kind:'buienradar-forecast-gif',source:'Buienradar',fetchedAt},
-  sessionId:'gif-1',filePath:'data://download/radar.gif',
+ const receive=(fetchedAt=Date.now(),index=0,generation=1)=>page.onReceivedFile({
+  params:{kind:'buienradar-native-frame',source:'Buienradar',fetchedAt,
+   frameIndex:index,generation},
+  sessionId:'native-'+generation+'-'+index,
+  filePath:'data://download/native-'+generation+'-'+index+'.png',
   readyState:'transferred'
  });
  const receiveCurrent=(fetchedAt=Date.now())=>page.onReceivedFile({
@@ -90,17 +81,18 @@ test('App starts with a neutral surface and never renders a KMI map',async()=>{
  assert.ok(!t.requests.some(x=>x.method==='radar.forecast'||x.method==='radar.frame'));
  t.page.onDestroy();
 });
-test('One real GIF transfer yields multiple moving native radar images',async()=>{
- const t=launch();t.page.build();await flush();t.receive();await flush();
- assert.equal(t.savedFiles.size,3);
+test('Phone-converted frames form native moving radar with zero local TGA files',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receive(Date.now(),0);t.receive(Date.now(),2);t.receive(Date.now(),4);
+ await flush();
+ assert.equal(t.savedFiles.size,0);
  assert.equal(t.page.radarWidget.values.visible,true);
  assert.equal(t.page.radarFrames.length,3);
- const paths=t.page.radarFrames.map(f=>f.path);
- assert.equal(new Set(paths).size,3);
- assert.equal(t.page.radarWidget.values.src,paths[0]);
+ assert.deepEqual(t.page.radarFrames.map(f=>f.frameIndex),[0,2,4]);
+ assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[0].path);
  t.page.nextRadarFrame();
- assert.equal(t.page.radarWidget.values.src,paths[1]);
- const stored=JSON.parse(t.cache.get('buienradar.animation.v2'));
+ assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[1].path);
+ const stored=JSON.parse(t.cache.get('buienradar.animation.v3'));
  assert.equal(stored.source,'Buienradar');
  assert.equal(stored.horizonMinutes,180);
  t.page.onDestroy();
@@ -156,7 +148,8 @@ test('Current Buienradar image remains on screen when animated GIF has not arriv
 test('Animated future frames replace the current observation when decoded',async()=>{
  const t=launch();t.page.build();await flush();
  t.receiveCurrent();await flush();
- t.receive();await flush();
+ t.receive(Date.now(),0);t.receive(Date.now(),2);t.receive(Date.now(),4);
+ await flush();
  assert.equal(t.page.radarFrames.length,3);
  assert.equal(t.page.radarTime.values.text,'BUIENRADAR · +3U');
  assert.equal(t.page.radarWidget.values.src,t.page.radarFrames[0].path);
@@ -211,4 +204,33 @@ test('ZML transfer errors are visible rather than waiting indefinitely',async()=
  assert.equal(t.page.radarSyncing,false);
  assert.equal(t.page.radarLabel.values.text,'OPNIEUW PROBEREN');
  t.page.onDestroy();
+});
+
+test('Green corrupted frames from pre-1.1.3 cache are never reused',async()=>{
+ const t=launch();
+ t.cache.set('buienradar.animation.v2',JSON.stringify({
+  source:'Buienradar',fetchedAt:Date.now(),horizonMinutes:180,
+  frames:[{path:'data://corrupt-old-tga.png'}]
+ }));
+ t.page.build();await flush();
+ assert.equal(t.page.radarWidget.values.visible,false);
+ t.receive(Date.now(),0,1);await flush();
+ assert.equal(t.page.radarWidget.values.src,'data://download/native-1-0.png');
+ t.page.onDestroy();
+});
+test('Newer GIF forecast replaces previous generation without mixing frames',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receive(Date.now(),0,1);t.receive(Date.now(),2,1);
+ assert.equal(t.page.radarFrames.length,2);
+ t.receive(Date.now(),0,2);
+ assert.equal(t.page.radarFrames.length,1);
+ t.receive(Date.now(),4,1);
+ assert.equal(t.page.radarFrames.length,1);
+ t.receive(Date.now(),2,2);
+ assert.deepEqual(t.page.radarFrames.map(f=>f.frameIndex),[0,2]);
+ t.page.onDestroy();
+});
+test('Watch never imports or calls custom proprietary image encoder',()=>{
+ const source=fs.readFileSync(new URL('../page/index.js',import.meta.url),'utf8');
+ assert.ok(!/toZeppImage|writeFileSync|decodeRadar\(|new BuienradarGif/.test(source));
 });
