@@ -1,0 +1,9 @@
+{
+  "name": "buienradar-one-image-device-probe",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@zeppos/zml": "0.0.43"
+  }
+}

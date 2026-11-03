@@ -1,0 +1,105 @@
+name: Buienradar one-image probe — separate preview
+on:
+  push:
+    branches: ['probe/buienradar-one-image']
+    paths:
+      - 'experiments/buienradar-single-image/**'
+      - '.github/workflows/buienradar-image-probe.yml'
+      - '!experiments/buienradar-single-image/public/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: zepp-buienradar-single-image
+  cancel-in-progress: true
+jobs:
+  build-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download actual static Buienradar image and verify PNG
+        run: |
+          curl -fL --retry 2 --max-time 45 -o /tmp/buienradar-current.png 'https://image.buienradar.nl/2.0/image/single/RadarMapRainBE?width=320&height=320&renderBackground=True&renderBranding=False&renderText=False'
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          from PIL import Image
+          im=Image.open('/tmp/buienradar-current.png'); im.load()
+          assert im.format=='PNG' and im.size==(320,320)
+          print('Buienradar real image:',im.format,im.size,im.mode)
+          PY
+      - name: Install Zepp toolchain and run checks
+        run: |
+          npm install --prefix zeus-cli @zeppos/zeus-cli@1.9.3
+          ln -s @zeppos/zeus-cli/private-modules/zeppos-app-utils zeus-cli/node_modules/zeppos-app-utils
+          npm install --prefix experiments/buienradar-single-image
+          node --check experiments/buienradar-single-image/page/index.js
+          node --check experiments/buienradar-single-image/app-side/index.js
+          node --check experiments/buienradar-single-image/prepare-assets.mjs
+          node --test experiments/buienradar-single-image/tests/*.test.mjs
+      - name: Build independent Balance 2 single-image application
+        run: |
+          node experiments/buienradar-single-image/prepare-assets.mjs
+          (cd experiments/buienradar-single-image && ../../zeus-cli/node_modules/.bin/zeus build)
+      - name: Package independent developer ZPK and install QR
+        run: |
+          python -m pip install --quiet qrcode[pil]
+          python - <<'PY'
+          import io,zipfile,qrcode,json
+          from pathlib import Path
+          root=Path('experiments/buienradar-single-image')
+          zab=list((root/'dist').glob('*.zab'))
+          if not zab:raise RuntimeError('Zepp probe ZAB missing')
+          with zipfile.ZipFile(zab[-1]) as outer:
+              zpkname=next(x for x in outer.namelist() if x.endswith('.zpk'))
+              payload=outer.read(zpkname)
+          with zipfile.ZipFile(io.BytesIO(payload)) as z:
+              files={p:z.read(p) for p in z.namelist()}
+          for module in ['device.zip','app-side.zip']:
+              if module not in files:raise RuntimeError(module+' missing')
+              with zipfile.ZipFile(io.BytesIO(files[module])) as inner:
+                  entries={p:inner.read(p) for p in inner.namelist()}
+              conf=json.loads(entries['app.json'])
+              assert conf['app']['appId']==991936821,'must not overwrite Buienradar'
+              conf.setdefault('packageInfo',{})['mode']='preview'
+              entries['app.json']=json.dumps(conf,separators=(',',':')).encode()
+              output=io.BytesIO()
+              with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
+                  for name,data in entries.items():z.writestr(name,data)
+              files[module]=output.getvalue()
+          output=io.BytesIO()
+          with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
+              for name,data in files.items():z.writestr(name,data)
+          public=root/'public';public.mkdir(parents=True,exist_ok=True)
+          zpk=public/'radar-probe-latest.zpk';zpk.write_bytes(output.getvalue())
+          prefix='Jorn1993/amazfit-apps/probe/buienradar-one-image/experiments/buienradar-single-image/public/'
+          qr='zpkd1://raw.githubusercontent.com/'+prefix+zpk.name
+          qrcode.make(qr).save(public/'radar-probe-qr.png')
+          (public/'install-url.txt').write_text(qr+'\n')
+          print('SEPARATE Radar Beeldtest appId=991936821 ZPK',len(output.getvalue()))
+          PY
+      - name: Publish ONLY to probe branch (never main QR)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp -a experiments/buienradar-single-image/public /tmp/zepp-probe-public
+          for attempt in 1 2 3; do
+            git fetch origin probe/buienradar-one-image
+            git reset --hard origin/probe/buienradar-one-image
+            mkdir -p experiments/buienradar-single-image/public
+            cp -a /tmp/zepp-probe-public/. experiments/buienradar-single-image/public/
+            git add experiments/buienradar-single-image/public
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m "build(probe): publish separate 1-image Zepp test ZPK [skip ci]"
+            if git push origin HEAD:probe/buienradar-one-image; then exit 0; fi
+          done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zepp-radar-one-image-install
+          path: experiments/buienradar-single-image/public/
+          if-no-files-found: warn
