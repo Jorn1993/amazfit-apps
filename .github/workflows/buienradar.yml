@@ -44,6 +44,7 @@ jobs:
       - name: Build Zepp mini program with last verified radar animation
         run: |
           python -m pip install --quiet requests pillow
+          python apps/buienradar/tools/probe_direct_radar.py
           python apps/buienradar/tools/bundle_radar.py
           node apps/buienradar/prepare-assets.mjs
           python apps/buienradar/tools/generate_branding.py
