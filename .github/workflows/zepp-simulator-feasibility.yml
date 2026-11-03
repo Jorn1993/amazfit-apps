@@ -1,0 +1,62 @@
+name: Zepp Simulator boot feasibility (experimental)
+on:
+  push:
+    branches:
+      - 'research/zepp-simulator-ci'
+    paths:
+      - '.github/workflows/zepp-simulator-feasibility.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  simulator-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Install Linux GUI test prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xauth x11-apps scrot libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0 curl
+      - name: Download official Zepp Simulator 2.1.2 Linux amd64
+        run: |
+          curl --fail --location --retry 2 --max-time 180 \
+            -o /tmp/zepp-simulator.deb \
+            'https://upload-cdn.zepp.com/zepp-applet-and-wechat-applet/20260717/simulator_2.1.2_linux_amd64.deb'
+          dpkg-deb --field /tmp/zepp-simulator.deb Package Version Architecture
+          dpkg-deb --contents /tmp/zepp-simulator.deb | head -n 25 || true
+      - name: Install official Zepp simulator
+        run: |
+          sudo apt-get install -y /tmp/zepp-simulator.deb
+          command -v simulator || true
+          test -e /opt/simulator/simulator || find /opt /usr/bin -maxdepth 4 -iname '*simulator*' -type f | head -n 20
+      - name: Attempt boot inside Xvfb and capture desktop
+        run: |
+          mkdir -p simulator-ci
+          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp >simulator-ci/xvfb.log 2>&1 &
+          sleep 3
+          export DISPLAY=:99
+          export ELECTRON_DISABLE_SANDBOX=1
+          SIM="$(command -v simulator || true)"
+          if [ -z "$SIM" ] && [ -x /opt/simulator/simulator ]; then SIM=/opt/simulator/simulator; fi
+          if [ -z "$SIM" ]; then echo 'No simulator executable installed' | tee simulator-ci/boot.log; exit 1; fi
+          echo "Trying official Zepp simulator: $SIM" | tee simulator-ci/boot.log
+          timeout 40 "$SIM" --no-sandbox >>simulator-ci/boot.log 2>&1 &
+          PID=$!
+          sleep 23
+          scrot -z simulator-ci/desktop.png || true
+          ps -ef | grep -E 'simulator|qemu|electron' | grep -v grep >simulator-ci/processes.txt || true
+          if kill -0 "$PID" 2>/dev/null; then
+            echo 'Simulator process remained running for 23s; GUI/profile and CLI link still unverified' | tee -a simulator-ci/boot.log
+            kill "$PID" || true
+          else
+            echo 'Simulator process exited early; inspect logs' | tee -a simulator-ci/boot.log
+            wait "$PID" || true
+          fi
+          test -s simulator-ci/desktop.png
+      - name: Upload evidence (NOT device-side rendering proof)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zepp-simulator-boot-research
+          path: simulator-ci/
+          if-no-files-found: warn
