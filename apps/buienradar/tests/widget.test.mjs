@@ -53,7 +53,7 @@ test('Old weather may be labelled last known, never stale radar',()=>{
  const t=launch(example,Date.now()-25*60000);
  assert.ok(t.elements.some(w=>w.props.text==='9° · laatst bekend'));
  assert.ok(!t.elements.some(w=>/Radar · niet actueel/.test(w.props.text||'')));
- assert.ok(!t.elements.some(w=>w.props.text.includes?.('Droog')));
+ assert.ok(!t.elements.some(w=>typeof w.props.text==='string'&&w.props.text.includes('Droog')));
 });
 test('No local forecast produces a useful open-app hint and unobstructed radar',()=>{
  const t=launch();
