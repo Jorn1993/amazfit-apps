@@ -66,7 +66,7 @@ async function forecast(location){
 // A deliberately small, hardware-proven Zepp pipeline:
 // this.download -> convertLib.convert -> this.sendFile -> BasePage.onReceivedFile.
 // Zepp SideService does not document binary read/write of arbitrary GIF frames;
-// using an imagined fs.readFile/writeFile here made 1.1.3 fail at runtime.
+// using imaginary phone-side binary file APIs caused 1.1.3 to fail.
 let radarBusy=false,radarGeneration=0;
 let radarState={stage:'idle',error:null,updatedAt:0,lastFetchedAt:0};
 function radarProgress(stage,error=null){
