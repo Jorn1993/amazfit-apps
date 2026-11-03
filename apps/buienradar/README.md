@@ -1,6 +1,6 @@
 # Buienradar · Amazfit Balance 2
 
-**1.1.1 — schermvullende Buienradar met actuele beeldstart en toekomstige animatie (privéprototype)**
+**1.1.2 — ZML Bluetooth-bestandsontvangst hersteld, schermvullende Buienradar (privéprototype)**
 
 ## Radar
 De +3 uur-radar komt **uitsluitend van Buienradar België**, via
@@ -27,3 +27,9 @@ Dezelfde QR-code verwijst altijd naar `buienradar-latest.zpk`. Bij een nieuwe de
 
 ## Bronnen en voorwaarden
 Neerslag, radar en weer: [Buienradar](https://www.buienradar.be/overbuienradar/weerdata-op-uw-website). Gebruik en verdere verspreiding van hun beelden vallen onder hun voorwaarden en kunnen toestemming vereisen. Onafhankelijk privéprototype, niet gelieerd aan Buienradar of Amazfit.
+
+## Fix 1.1.2: bestandsoverdracht op Zepp zelf
+
+De eerdere implementatie creëerde naast de ZML-Bluetooth-ontvangst een tweede zelfstandige `TransferFile().getInbox()`. ZML initialiseert de oorspronkelijke Inbox bij het starten van de app en haalt zelf de ontvangen FileObject uit de wachtrij. Daardoor kon de tweede ontvanger geen beeld krijgen. De app gebruikt nu uitsluitend de gedocumenteerde ZML `onReceivedFile(file)`-callback van `BasePage`, ontvangt daar het FileObject en wacht op `readyState='transferred'` vooraleer het bestand te tonen of de GIF uit te pakken. Fouten met downloaden, verwerken of verzenden blijven zichtbaar. De app toont bovendien de live status van de telefoonservice en meldt een hangende overdracht vóór de vroegere wachttijd van 105 seconden.
+
+De decoder is met een echte Buienradar-GIF getest en de end-to-end ZML-dispatch is nu opgenomen in de regressietests. Op een fysieke Balance 2 is de uitkomst nog te bevestigen; CI simuleert BLE-gebeurtenissen en kan de firmware-omgeving niet volledig representeren.
