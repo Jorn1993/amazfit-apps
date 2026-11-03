@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {sampleRadar,radarDeltaRects,toCanvasRect} from '../page/radar-canvas.js';
 function launch({connected=true,cacheCurrent=null,cacheOld=null}={}){
  let page,crown,swipe,stopped=0;
- const requests=[],cache=new Map();
+ const requests=[],cache=new Map(),canvasDraws=[];
  if(cacheCurrent)cache.set('buienradar.current.v2',JSON.stringify(cacheCurrent));
  if(cacheOld)cache.set('buienradar.animation.v3',JSON.stringify(cacheOld));
  function makeWidget(type,props){
@@ -13,9 +14,13 @@ function launch({connected=true,cacheCurrent=null,cacheOld=null}={}){
    else this.values[key]=value;
   }};
   if(type===5)obj.createWidget=makeWidget;
+  if(type===6){
+   obj.drawRect=rect=>canvasDraws.push(rect);
+   obj.clear=()=>canvasDraws.push({clear:true});
+  }
   return obj;
  }
- const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3,IMG:4,VIEW_CONTAINER:5},
+ const ui={widget:{TEXT:1,BUTTON:2,FILL_RECT:3,IMG:4,VIEW_CONTAINER:5,CANVAS:6},
   prop:{TEXT:'text',COLOR:'color',H:'h',Y:'y',VISIBLE:'visible',MORE:'more'},
   align:{CENTER_H:1},text_style:{WRAP:1},createWidget:makeWidget};
  const now=Date.now(),location={name:'Antwerpen',lat:51.2194,lon:4.4025};
@@ -30,6 +35,20 @@ function launch({connected=true,cacheCurrent=null,cacheOld=null}={}){
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(source,{
   Page:x=>page=x,BasePage:x=>x,ui,
+  readFileSync:()=>new Uint8Array([71,73,70]),
+  BuienradarGif:class{
+   constructor(input){assert.equal(input[0],71);this.width=320;this.height=320;this.index=0;}
+   nextFrame(){
+    if(this.index>=5)return null;
+    const rgb=new Uint8Array(320*320*3);
+    const color=[0,80,160,220,35][this.index++];
+    for(let i=0;i<rgb.length;i+=3){
+     rgb[i]=color;rgb[i+1]=170;rgb[i+2]=80;
+    }
+    return {width:320,height:320,rgb,delay:950};
+   }
+  },
+  sampleRadar,radarDeltaRects,toCanvasRect,
   setScrollMode:x=>swipe=x,getSwiperIndex:()=>selectedPage+1,
   SCROLL_MODE_SWIPER_HORIZONTAL:'horizontal',push:()=>{},
   onDigitalCrown:({callback})=>crown=callback,offDigitalCrown:()=>{},KEY_HOME:1,
@@ -52,7 +71,12 @@ function launch({connected=true,cacheCurrent=null,cacheOld=null}={}){
    params:{kind:'buienradar-current-frame',source:'Buienradar',fetchedAt},
    sessionId:'observed-'+fetchedAt,filePath,readyState:'transferred'
   });
- return {page,requests,cache,receive,swipe:()=>swipe,stopped:()=>stopped,
+ const receiveGif=(fetchedAt=Date.now())=>page.onReceivedFile({
+  params:{kind:'buienradar-forecast-gif',source:'Buienradar',fetchedAt,generation:1},
+  sessionId:'future-gif-'+fetchedAt,
+  filePath:'data://download/real-future.gif',readyState:'transferred'
+ });
+ return {page,requests,cache,receive,receiveGif,canvasDraws,swipe:()=>swipe,stopped:()=>stopped,
   crown:()=>crown,setUiPage:x=>selectedPage=x};
 }
 const flush=async()=>{for(let i=0;i<100;i++)await Promise.resolve();};
@@ -160,5 +184,42 @@ test('Offline side service error is explicit and rain never looks fresh',async()
  const t=launch({connected:false});t.page.build();await flush();
  assert.match(t.page.radarError,/offline/);
  assert.match(t.page.rainDetail.values.text,/offline/);
+ t.page.onDestroy();
+});
+
+test('Authentic GIF received through ZML is drawn as RGB on Zepp Canvas',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receive();
+ t.receiveGif();await flush();
+ assert.equal(t.page.radarCanvas.values.visible,true);
+ assert.equal(t.page.radarWidget.values.visible,false);
+ assert.equal(t.page.radarTime.values.text,'BUIENRADAR · VOORUIT');
+ assert.equal(t.page.radarCanvasFrames.length,3);
+ assert.ok(t.canvasDraws.length>0);
+ assert.ok(t.canvasDraws.some(r=>r.color===0x00aa50));
+ assert.equal(JSON.parse(t.cache.get('buienradar.gif.v1')).source,'Buienradar');
+ const before=t.canvasDraws.length;
+ t.page.nextRadarFrame();await flush();
+ assert.equal(t.page.radarFrameIndex,1);
+ assert.ok(t.canvasDraws.length>before);
+ t.page.onDestroy();
+});
+test('Animation reverts to genuine current image when GIF is no longer fresh',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receive();t.receiveGif();await flush();
+ assert.equal(t.page.radarCanvas.values.visible,true);
+ t.page.radarGifAt=Date.now()-60*60000;
+ t.page.nextRadarFrame();await flush();
+ assert.equal(t.page.radarCanvas.values.visible,false);
+ assert.equal(t.page.radarWidget.values.visible,true);
+ assert.equal(t.page.radarTime.values.text,'BUIENRADAR · ACTUEEL');
+ t.page.onDestroy();
+});
+test('Broken GIF decoder cannot hide valid current Buienradar observation',async()=>{
+ const t=launch();t.page.build();await flush();
+ t.receive();
+ t.page.prepareFutureRadar('data://old.gif',Date.now()-3600000);
+ assert.equal(t.page.radarWidget.values.visible,true);
+ assert.equal(t.page.radarTime.values.text,'BUIENRADAR · ACTUEEL');
  t.page.onDestroy();
 });
