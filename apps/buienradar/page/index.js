@@ -58,34 +58,20 @@ Page(BasePage({
  build(){
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
   this.rainError=null;
-  this.radarFrames=[];this.radarFetchedAt=0;
   this.radarSyncing=false;this.radarError=null;this.radarEpoch=0;
-  this.radarFallback=null;this.radarDisplayed=false;
-  this.radarRequestAt=0;this.frameIndex=0;this.statusTicks=0;
+  this.radarDisplayed=false;this.radarRequestAt=0;this.statusTicks=0;
   this.radarStage='idle';this.currentFrame=null;this.currentFetchedAt=0;
-  this.radarActiveGeneration=-1;
   this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];this.cityLabels=[];this.lastCrown=0;
   this.zoom=1;this.location={name:'Antwerpen',lat:51.2194,lon:4.4025};
   this.lastAlertKey=null;
-  // Never read the old KMI cache. Only genuine, recent Buienradar frames.
+  // Only the cache produced by the hardware-proven official Zepp converter.
+  // Legacy GIF/native-TGA cache keys are deliberately never read.
   try{
-   const old=JSON.parse(storage.getItem('buienradar.animation.v3')||'null');
-   const now=Date.now();
-   if(old?.source==='Buienradar'&&old.horizonMinutes===180&&
-      now>=old.fetchedAt&&now-old.fetchedAt<12*60000&&
-      Array.isArray(old.frames)){
-    const frames=old.frames.filter(f=>f&&typeof f.path==='string'&&
-     f.path.startsWith('data://'));
-    if(frames.length>=2){
-     this.radarFrames=frames;this.radarFetchedAt=old.fetchedAt;
-    }
-   }
-  }catch(_){}
-  try{
-   const old=JSON.parse(storage.getItem('buienradar.current.v1')||'null');
+   const old=JSON.parse(storage.getItem('buienradar.current.v2')||'null');
+   const age=Date.now()-Number(old?.fetchedAt);
    if(old?.source==='Buienradar'&&old.path?.startsWith('data://')&&
-      Date.now()>=old.fetchedAt&&Date.now()-old.fetchedAt<12*60000){
+      age>=0&&age<8*60000){
     this.currentFrame={path:old.path};
     this.currentFetchedAt=old.fetchedAt;
    }
@@ -221,8 +207,7 @@ Page(BasePage({
    if(++this.configTick%12===0)this.checkConfig();
   },950);
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
-  // Check frequently, but only fetch a new forecast once its age reaches 8m.
-  // This leaves a safety margin before the strict 12m display expiry.
+  // Refresh a genuine current image every 5m; never display after 8m.
   this.radarTimer=setInterval(()=>{void this.requestRadar();},60000);
   void this.requestRadar();
   void this.readLocation();
@@ -236,148 +221,75 @@ Page(BasePage({
   }
  },
  onReceivedFile(file){
-  // Zepp ZML's BasePage file-transfer plugin calls this with the already
-  // dequeued FileObject. Do not create a second TransferFile/getNextFile.
-  if(!file?.params||file.params.source!=='Buienradar')return;
-  const kind=file.params.kind;
-  if(kind!=='buienradar-native-frame'&&
-     kind!=='buienradar-current-frame')return;
-  if(this.disposed)return;
+  // The Zepp BasePage ZML callback receives files converted using the
+  // official phone-side convertLib. No second TransferFile inbox.
+  if(this.disposed||file?.params?.source!=='Buienradar'||
+     file.params.kind!=='buienradar-current-frame')return;
   const fetchedAt=Number(file.params.fetchedAt),now=Date.now();
   if(!Number.isFinite(fetchedAt)||fetchedAt>now+60000||
-     now-fetchedAt>12*60000){
-   this.radarError='ONTVANGST: verlopen of ongeldige radar';
-   this.updateRadarLabel();return;
-  }
+     now-fetchedAt>8*60000)return;
   const id=String(file.sessionId??file.fileName??file.filePath??fetchedAt);
-  if(!this.incomingRadarFiles)this.incomingRadarFiles={};
   if(this.incomingRadarFiles[id])return;
   this.incomingRadarFiles[id]=true;
-  const deliver=state=>{
-   if(this.disposed||!this.incomingRadarFiles?.[id])return;
+  const finish=state=>{
+   if(this.disposed||!this.incomingRadarFiles[id])return;
    const status=state||file.readyState;
    if(status==='error'||status==='canceled'){
     delete this.incomingRadarFiles[id];
-    this.radarError='BLUETOOTH: bestandsoverdracht mislukt';
+    this.radarError='BLUETOOTH: bestand niet ontvangen';
     this.radarSyncing=false;this.updateRadarLabel();return;
    }
    if(status!=='transferred')return;
-   if(!file.filePath){
-    // Some firmware reports the state before the final filePath property.
-    this.radarError='ONTVANGST: bestandspad ontbreekt';
-    this.radarSyncing=false;this.updateRadarLabel();
-    delete this.incomingRadarFiles[id];return;
-   }
    delete this.incomingRadarFiles[id];
-   this.radarStage=kind==='buienradar-current-frame'?'current-ready':'frame-ready';
-   if(kind==='buienradar-current-frame'){
-    this.currentFrame={path:file.filePath};
-    this.currentFetchedAt=fetchedAt;
-    try{storage.setItem('buienradar.current.v1',JSON.stringify({
-     source:'Buienradar',path:file.filePath,fetchedAt
-    }));}catch(_){}
-    this.applyRadarFrame();
-    this.updateRadarLabel();
-   }else{
-    this.acceptNativeRadarFrame(file,fetchedAt);
+   if(!file.filePath){
+    this.radarError='BLUETOOTH: bestandspad ontbreekt';
+    this.radarSyncing=false;this.updateRadarLabel();return;
    }
-  };
-  // A completed file may arrive through ZML after the NEWFILE event.
-  if(typeof file.on==='function')file.on('change',ev=>
-   deliver(ev?.data?.readyState||file.readyState));
-  deliver(file.readyState);
- },
- acceptNativeRadarFrame(file,fetchedAt){
-  // The phone has already converted this RGB frame using Zepp image.convert.
-  // No watch-side proprietary image encoder, which caused coloured noise.
-  const index=Number(file.params.frameIndex),generation=Number(file.params.generation);
-  if(!Number.isInteger(index)||index<0||index>=24||
-     !Number.isInteger(generation)||generation<0){
-   this.radarError='ONTVANGST: ongeldig radarframe';
-   this.updateRadarLabel();return;
-  }
-  if(generation<this.radarActiveGeneration)return;
-  if(generation!==this.radarActiveGeneration){
-   this.radarActiveGeneration=generation;
-   this.radarFrames=[];this.radarFetchedAt=fetchedAt;this.frameIndex=0;
-  }
-  if(!this.radarFrames.some(frame=>frame.frameIndex===index))
-   this.radarFrames.push({path:file.filePath,frameIndex:index});
-  this.radarFrames.sort((a,b)=>a.frameIndex-b.frameIndex);
-  this.radarFetchedAt=Math.min(this.radarFetchedAt,fetchedAt);
-  this.radarFallback=null;
-  if(this.radarFrames.length>=2){
+   // Ignore stale out-of-order transfers from an earlier refresh.
+   if(fetchedAt<this.currentFetchedAt)return;
+   this.currentFrame={path:file.filePath};
+   this.currentFetchedAt=fetchedAt;
+   this.radarStage='received';
    this.radarSyncing=false;this.radarError=null;
-  }
-  this.applyRadarFrame();this.saveRadarCache();this.updateRadarLabel();
+   try{storage.setItem('buienradar.current.v2',JSON.stringify({
+    source:'Buienradar',path:file.filePath,fetchedAt
+   }));}catch(_){}
+   this.applyRadarFrame();
+  };
+  if(typeof file.on==='function')file.on('change',e=>
+   finish(e?.data?.readyState||file.readyState));
+  finish(file.readyState);
  },
- isRadarFresh(){
-  const age=Date.now()-this.radarFetchedAt;
-  return this.radarFrames.length>=1&&age>=0&&age<12*60000;
- },
- visibleRadarFrames(now=Date.now()){
-  if(this.isRadarFresh())return this.radarFrames;
-  const prev=this.radarFallback;
-  if(prev&&now>=prev.fetchedAt&&now-prev.fetchedAt<12*60000)
-   return prev.frames;
-  return [];
+ hasCurrentRadar(now=Date.now()){
+  return !!(this.currentFrame?.path&&Number.isFinite(this.currentFetchedAt)&&
+   now>=this.currentFetchedAt&&now-this.currentFetchedAt<8*60000);
  },
  updateRadarLabel(){
   if(!this.radarLabel)return;
-  const forecast=this.visibleRadarFrames().length>0;
   const current=this.hasCurrentRadar();
-  const stageNames={
-   starting:'VERBINDEN', 'snapshot-download':'KAART DOWNLOADEN',
-   'snapshot-convert':'KAART OMZETTEN',
-   'snapshot-transfer':'KAART VERSTUREN',
-   'current-ready':'VOORSPELLING LADEN',
-   'gif-download':'ANIMATIE DOWNLOADEN',
-   'gif-transfer':'ANIMATIE VERSTUREN',
-   transferred:'BEELDEN ONTVANGEN','gif-read':'GIF LEZEN',
-   'frame-ready':'VOORSPELLING ONTVANGEN'
+  const stages={
+   idle:'BUIENRADAR',starting:'VERBINDEN',download:'KAART DOWNLOADEN',
+   convert:'KAART OMZETTEN',transfer:'KAART OVERBRENGEN',
+   transferred:'BEELD ONTVANGEN',received:'ACTUEEL'
   };
-  const loading=stageNames[this.radarStage]||'BUIENRADAR LADEN';
-  const label=forecast?'':this.radarError?'OPNIEUW PROBEREN':
-   this.radarSyncing?loading:'RADAR OPHALEN';
-  const compact=current||forecast;
+  const label=this.radarError?'OPNIEUW PROBEREN':
+   this.radarSyncing?(stages[this.radarStage]||'BUIENRADAR LADEN'):
+   'BUIENRADAR OPHALEN';
   this.radarLabel.setProperty(ui.prop.MORE,{
-   x:compact?142:110,y:compact?357:210,w:compact?196:260,
-   h:compact?37:48,text:label,text_size:compact?15:17,
+   x:current?140:107,y:current?349:210,w:current?200:266,
+   h:current?36:48,text:label,text_size:current?15:17,
    normal_color:0x102839
   });
-  this.radarLabel.setProperty(ui.prop.VISIBLE,!forecast);
-  if(this.radarErrorText){
-   // Unlike previous versions, never hide the actual failure behind
-   // an eternal 'loading' label.
-   this.radarErrorText.setProperty(ui.prop.TEXT,
-    this.radarError?String(this.radarError).slice(0,46):'');
-  }
-  if(this.radarTime)
-   this.radarTime.setProperty(ui.prop.TEXT,
-    forecast?'BUIENRADAR · +3U':current?'BUIENRADAR · ACTUEEL':
-    'BUIENRADAR · RADAR');
- },
- hasCurrentRadar(now=Date.now()){
-  return !!(this.currentFrame&&this.currentFrame.path&&
-    now>=this.currentFetchedAt&&now-this.currentFetchedAt<12*60000);
- },
- saveRadarCache(){
-  if(!this.isRadarFresh())return;
-  try{
-   storage.setItem('buienradar.animation.v3',JSON.stringify({
-    source:'Buienradar',horizonMinutes:180,fetchedAt:this.radarFetchedAt,
-    frames:this.radarFrames
-   }));
-  }catch(_){}
+  // Never put a permanent opaque control over a real fullscreen map.
+  this.radarLabel.setProperty(ui.prop.VISIBLE,!current||!!this.radarError);
+  this.radarErrorText?.setProperty(ui.prop.TEXT,
+   this.radarError?String(this.radarError).slice(0,48):'');
+  this.radarTime?.setProperty(ui.prop.TEXT,
+   current?'BUIENRADAR · ACTUEEL':'BUIENRADAR · RADAR');
  },
  nextRadarFrame(){
-  const frames=this.visibleRadarFrames();
-  if(frames.length<2){
-   if(this.radarDisplayed&&!frames.length)this.applyRadarFrame();
-   return;
-  }
-  this.frameIndex=(this.frameIndex+1)%frames.length;
-  this.applyRadarFrame();
+  // Current observation has no invented future animation.
+  if(this.radarDisplayed&&!this.hasCurrentRadar())this.applyRadarFrame();
  },
  async phone(message,timeout=20000){
   if(typeof this.request!=='function')throw Error('Zepp verbinding niet beschikbaar');
@@ -394,27 +306,29 @@ Page(BasePage({
   if(this.disposed||!this.radarSyncing)return;
   try{
    const result=await this.phone({method:'radar.status'},9000);
-   if(!result?.ok)throw Error(result?.error||'Radarstatus niet beschikbaar');
-   if(this.radarStage!=='decode'&&this.radarStage!=='current-ready')
-    this.radarStage=result.stage||this.radarStage;
-   if(result.stage==='failed')throw Error(result.error||'overdracht mislukt');
-   if(Date.now()-this.radarRequestAt>155000&&!this.isRadarFresh())
-    throw Error('RADAR: geen afbeelding ontvangen ('+this.radarStage+')');
-   // A phone-side file transfer can complete even if no matching ZML
-   // onReceivedFile callback ever reaches the watch. Report that case.
-   if(result.stage==='transferred'&&!this.hasCurrentRadar()&&
-      !this.isRadarFresh()&&Date.now()-this.radarRequestAt>40000)
-    throw Error('Bluetooth: geen radarbestand ontvangen');
+   if(!result?.ok)throw Error(result?.error||'Radarstatus niet bereikbaar');
+   this.radarStage=result.stage||this.radarStage;
+   if(result.stage==='failed')
+    throw Error(result.error||'Buienradar ophalen mislukt');
+   if(this.hasCurrentRadar()){
+    this.radarSyncing=false;this.radarError=null;
+    this.updateRadarLabel();return;
+   }
+   const elapsed=Date.now()-this.radarRequestAt;
+   if(result.stage==='transferred'&&elapsed>15000)
+    throw Error('BLUETOOTH: afbeelding niet aangekomen');
+   if(elapsed>75000)
+    throw Error('RADAR: te lang geen actueel beeld');
    this.updateRadarLabel();
   }catch(e){
-   this.radarError=String(e.message||e);
+   this.radarError=String(e?.message||e);
    this.radarSyncing=false;this.updateRadarLabel();
   }
  },
  async requestRadar(force=false){
   if(this.disposed||this.radarSyncing)return;
-  if(!force&&this.isRadarFresh()&&
-     Date.now()-this.radarFetchedAt<8*60000)return;
+  if(!force&&this.hasCurrentRadar()&&
+     Date.now()-this.currentFetchedAt<5*60000)return;
   this.radarSyncing=true;this.radarError=null;this.radarStage='starting';
   this.radarRequestAt=Date.now();this.statusTicks=0;
   this.updateRadarLabel();
@@ -423,7 +337,7 @@ Page(BasePage({
    if(!answer?.ok||answer.source!=='Buienradar')
     throw Error(answer?.error||'Buienradar niet bereikbaar');
   }catch(e){
-   this.radarError=String(e.message||e);
+   this.radarError=String(e?.message||e);
    this.radarSyncing=false;this.updateRadarLabel();
   }
  },
@@ -546,19 +460,14 @@ Page(BasePage({
  },
  applyRadarFrame(){
   if(!this.radarBase||!this.radarWidget)return;
-  const factor=this.zoom||1;
-  const dim=Math.round(SIZE*factor);
-  const geometry={x:Math.round((SIZE-dim)/2),
-   y:Math.round((SIZE-dim)/2),w:dim,h:dim,auto_scale:true};
-  const frames=this.visibleRadarFrames();
+  const factor=this.zoom||1,dim=Math.round(SIZE*factor);
   const current=this.hasCurrentRadar();
-  const frame=frames.length?frames[this.frameIndex%frames.length]:
-   current?this.currentFrame:null;
-  this.radarDisplayed=!!frame;
-  if(frame)this.radarWidget.setProperty(ui.prop.MORE,{
-   ...geometry,src:frame.path
+  this.radarDisplayed=current;
+  if(current)this.radarWidget.setProperty(ui.prop.MORE,{
+   x:Math.round((SIZE-dim)/2),y:Math.round((SIZE-dim)/2),
+   w:dim,h:dim,src:this.currentFrame.path,auto_scale:true
   });
-  this.radarWidget.setProperty(ui.prop.VISIBLE,!!frame);
+  this.radarWidget.setProperty(ui.prop.VISIBLE,current);
   this.updateRadarLabel();
  },
  renderForecast(){
