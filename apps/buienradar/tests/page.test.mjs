@@ -44,7 +44,7 @@ function launch({connected=true,cacheFuture=null,frameEnabled=false}={}){
   setTimeout:()=>22,clearTimeout:()=>{},
   Date,Math,JSON,Number,String,Promise,Error,Array
  });
- page.messaging={request:async request=>{
+ page.request=async request=>{
   requests.push(request);
   if(request.method==='rain.forecast')return connected?forecast:{ok:false};
   if(request.method==='radar.forecast')return connected?
@@ -54,7 +54,7 @@ function launch({connected=true,cacheFuture=null,frameEnabled=false}={}){
     }))}:{ok:false,error:'offline'};
   if(request.method==='radar.frame')return frameEnabled?{ok:true}:{ok:false,error:'mock BLE'};
   return {ok:true,stage:'idle'};
- }};
+ };
  const receive=(index=0,time=times[index],path='data://future.img')=>{
   frame={params:{kind:'future-radar-frame',source:'KMI',frameIndex:index,
    validAt:time,validTime:new Date(time).toISOString()},
@@ -148,5 +148,17 @@ test('Radar frame timeout invalidation does not leave an expired image on screen
  t.page.radarFetchedAt=now-13*60000;
  t.page.nextRadarFrame();
  assert.equal(t.page.radarWidget.values.src,'kmi-clear.png');
+ t.page.onDestroy();
+});
+
+
+test('Uses the documented ZML page request API, never an undefined messaging object',async()=>{
+ const t=launch();
+ assert.equal(t.page.messaging,undefined);
+ assert.equal(typeof t.page.request,'function');
+ t.page.build();await flush();
+ assert.equal(t.page.rainState.values.text,'DROOG');
+ assert.ok(t.requests.some(r=>r.method==='rain.forecast'));
+ assert.ok(t.requests.some(r=>r.method==='config.get'));
  t.page.onDestroy();
 });

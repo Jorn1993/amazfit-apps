@@ -1,6 +1,6 @@
 # Buienradar for Amazfit Balance 2
 
-**1.0.1 · Zepp OS 3 · privéprototype**
+**1.0.2 · Zepp OS 3 · privéprototype**
 
 ## Radar: uitsluitend toekomstige beelden, zonder GitHub
 
@@ -13,6 +13,12 @@ De dataflow is **horloge ↔ Zepp op telefoon ↔ KMI**, zonder GitHub tijdens h
 De **tijd** onderaan is het voorspelde tijdstip van het zichtbare frame; niet de tijd waarop de foto werd gedownload. Dit is een toekomstvoorspelling, geen historische waarnemingsanimatie. De radar gebruikt het Belgische KMI-overzicht en de app staat voor KMI als bron vermeld, niet alsof Buienradar deze kaart levert.
 
 **Belangrijk:** de KMI-app-API is niet publiek stabiel gedocumenteerd. De PNG-API en de mapuitlijning zijn op een echte server gecontroleerd, maar overdracht en daadwerkelijke frameweergave op een fysiek Balance 2 zijn nog niet bevestigd. De volledige beweging op het horloge werkt alleen zodra meer dan één frame via Bluetooth ontvangen is.
+
+## Telefoonverbinding (1.0.2)
+
+Versie 1.0.2 herstelt de directe `BasePage.request()`-aanroepen voor regen, weer, locatie en radarmetadata. De oude `this.messaging.request()` bestaat niet in de publieke ZML BasePage API en veroorzaakte een appbrede datastoring. De regenpagina toont nu de werkelijke foutreden in plaats van een generieke melding. Dit is nog geen bevestiging van correcte aflevering op een fysiek horloge.
+
+**Bronkeuze:** de huidige KMI-radar is niet de gewenste Buienradar-animatie. Deze code wordt niet als oplossing voor de echte Buienradar +3u-radar beschouwd: de officiële Buienradar-GIF vraagt een betrouwbare frameconverter voordat Zepp de toekomstige frames als afbeeldingen kan tonen.
 
 ## De andere schermen
 

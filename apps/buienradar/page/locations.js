@@ -49,9 +49,11 @@ Page(BasePage({
  },
  async choose(location){
   try{
-   const reply=await this.messaging.request({
+   // ZML BasePage provides request() directly, not messaging.request().
+   if(typeof this.request!=='function')throw Error('offline');
+   const reply=await this.request({
     method:'config.set',params:{location}
-   },{timeout:15000});
+   });
    if(!reply||reply.ok!==true||!reply.location)throw Error('offline');
    store.setItem('buienradar.location',JSON.stringify(reply.location));
    back();

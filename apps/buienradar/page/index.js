@@ -58,6 +58,7 @@ function isNightAt(lat,lon,date=new Date()){
 Page(BasePage({
  build(){
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
+  this.rainError=null;
   this.radarFrames=[];this.radarTimes=[];this.radarFetchedAt=0;
   this.radarSyncing=false;this.radarError=null;this.radarEpoch=0;
   this.radarFallback=null;this.radarDisplayed=false;
@@ -309,8 +310,17 @@ Page(BasePage({
   this.applyRadarFrame();
  },
  async phone(message,timeout=20000){
-  if(!this.messaging?.request)throw Error('Geen Zepp telefoonverbinding');
-  return this.messaging.request(message,{timeout});
+  // ZML BasePage exposes request() directly; `this.messaging.request` is not
+  // a public Zepp API and silently prevented every phone-side data request.
+  if(typeof this.request!=='function')throw Error('Zepp verbinding niet beschikbaar');
+  let timer;
+  try{
+   return await Promise.race([
+    this.request(message),
+    new Promise((_,reject)=>{timer=setTimeout(()=>
+     reject(Error('Telefoon antwoordt niet ('+message.method+')')),timeout);})
+   ]);
+  }finally{if(timer!==undefined)clearTimeout(timer);}
  },
  async downloadFutureFrame(index){
   const t=this.radarTimes[index];
@@ -384,7 +394,8 @@ Page(BasePage({
    // Keep last snapshot for offline widget; it is marked stale there.
    // A location change explicitly clears that old city's snapshot. 
    this.rainState.setProperty(ui.prop.TEXT,'GEEN RECENTE DATA');
-   this.rainDetail.setProperty(ui.prop.TEXT,'Telefoon of gegevens niet beschikbaar');
+   this.rainDetail.setProperty(ui.prop.TEXT,
+    (this.rainError||'Telefoon of gegevens niet beschikbaar').slice(0,55));
    this.temp.setProperty(ui.prop.TEXT,'--°');
    this.amount.setProperty(ui.prop.TEXT,'-- mm');
    this.wind.setProperty(ui.prop.TEXT,'-- km/u');
@@ -439,10 +450,12 @@ Page(BasePage({
    const result=await this.phone({method:'rain.forecast',params:{}},25000);
    if(this.disposed)return;
    this.rain=forecastFresh(result)?result:EMPTY;
+   this.rainError=this.rain.ok?null:
+    String(result?.error||'Buienradar geeft geen recente gegevens');
    this.draw();
    if(this.rain.ok)this.storeShortcut(this.rain);
-  }catch(_){
-   this.rain=EMPTY;this.draw();
+  }catch(e){
+   this.rain=EMPTY;this.rainError=String(e?.message||e);this.draw();
   }finally{
    this.loading=false;
    if(this.screen===0)void this.requestRadar();
