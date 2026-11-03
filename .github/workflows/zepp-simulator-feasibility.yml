@@ -16,7 +16,7 @@ jobs:
       - name: Install Linux GUI test prerequisites
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb xauth x11-apps scrot xdotool libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0 curl
+          sudo apt-get install -y -qq xvfb xauth x11-apps scrot xdotool python3-pil libxss1 libcapstone4 libaio1t64 libsdl2-2.0-0 curl
       - name: Download official Zepp Simulator 2.1.2 Linux amd64
         run: |
           curl --fail --location --retry 2 --max-time 180 \
@@ -29,39 +29,58 @@ jobs:
           sudo apt-get install -y /tmp/zepp-simulator.deb
           command -v simulator || true
           test -e /opt/simulator/simulator || find /opt /usr/bin -maxdepth 4 -iname '*simulator*' -type f | head -n 20
-      - name: Attempt boot inside Xvfb and capture desktop
+      - name: Boot Zepp Simulator and open Zepp Account sign-in
         run: |
-          mkdir -p simulator-ci
-          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp >simulator-ci/xvfb.log 2>&1 &
+          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp > /tmp/zepp-xvfb.log 2>&1 &
           sleep 3
           export DISPLAY=:99
-          export ELECTRON_DISABLE_SANDBOX=1
-          SIM="$(command -v simulator || true)"
-          if [ -z "$SIM" ] && [ -x /opt/simulator/simulator ]; then SIM=/opt/simulator/simulator; fi
-          if [ -z "$SIM" ]; then echo 'No simulator executable installed' | tee simulator-ci/boot.log; exit 1; fi
-          echo "Trying official Zepp simulator: $SIM" | tee simulator-ci/boot.log
-          timeout 40 "$SIM" --no-sandbox >>simulator-ci/boot.log 2>&1 &
-          PID=$!
+          ELECTRON_DISABLE_SANDBOX=1 /opt/simulator/simulator --no-sandbox > /tmp/zepp-simulator.log 2>&1 &
           sleep 10
-          scrot -z simulator-ci/desktop.png || true
-          # Screenshot from first proof shows the official simulator window at
-          # x=115..1164, y=90..811; click its "download emulator" cloud icon.
           xdotool mousemove --sync 1115 132 click 1
-          sleep 14
-          scrot -z simulator-ci/emulator-download-dialog.png || true
-          ps -ef | grep -E 'simulator|qemu|electron' | grep -v grep >simulator-ci/processes.txt || true
-          if kill -0 "$PID" 2>/dev/null; then
-            echo 'Simulator process remained running after opening emulator download UI; GUI/profile and CLI link still unverified' | tee -a simulator-ci/boot.log
-            kill "$PID" || true
-          else
-            echo 'Simulator process exited early; inspect logs' | tee -a simulator-ci/boot.log
-            wait "$PID" || true
+          sleep 3
+      - name: Authenticate Zepp account from repository secrets
+        env:
+          ZEPP_EMAIL: ${{ secrets.ZEPP_ACCOUNT_EMAIL }}
+          ZEPP_PASSWORD: ${{ secrets.ZEPP_ACCOUNT_PASSWORD }}
+        run: |
+          set +x
+          if [ -z "$ZEPP_EMAIL" ] || [ -z "$ZEPP_PASSWORD" ]; then
+            echo 'Missing Zepp account Actions secrets; skipping login.'
+            exit 1
           fi
-          test -s simulator-ci/desktop.png
-      - name: Upload evidence (NOT device-side rendering proof)
+          export DISPLAY=:99
+          umask 077
+          input_file="$(mktemp /dev/shm/zepp-login.XXXXXXXX)"
+          trap 'rm -f "$input_file"' EXIT
+          # Temporary memory-backed file keeps secrets out of process arguments.
+          printf '%s' "$ZEPP_EMAIL" > "$input_file"
+          xdotool mousemove --sync 615 310 click 1
+          xdotool type --clearmodifiers --delay 40 --file "$input_file"
+          printf '%s' "$ZEPP_PASSWORD" > "$input_file"
+          xdotool mousemove --sync 610 381 click 1
+          xdotool type --clearmodifiers --delay 50 --file "$input_file"
+          rm -f "$input_file"
+          unset ZEPP_EMAIL ZEPP_PASSWORD
+          xdotool mousemove --sync 645 534 click 1
+          sleep 14
+          xdotool mousemove --sync 1115 132 click 1 || true
+          sleep 5
+          # Upload only a redacted screenshot; no raw image or auth logs.
+          mkdir -p simulator-ci
+          scrot -z /tmp/zepp-post-login.png
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw
+          im=Image.open('/tmp/zepp-post-login.png').convert('RGB')
+          draw=ImageDraw.Draw(im)
+          draw.rectangle((0,0,1280,210),fill=(15,15,15))
+          draw.rectangle((466,270,830,422),fill=(15,15,15))
+          im.save('simulator-ci/zepp-emulator-status-redacted.png')
+          PY
+          test -s simulator-ci/zepp-emulator-status-redacted.png
+      - name: Upload redacted simulator status (no session data)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zepp-simulator-boot-research
-          path: simulator-ci/
+          name: zepp-emulator-login-research
+          path: simulator-ci/zepp-emulator-status-redacted.png
           if-no-files-found: warn
