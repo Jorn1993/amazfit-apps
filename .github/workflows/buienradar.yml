@@ -41,11 +41,10 @@ jobs:
           node --check apps/buienradar/page/locations.js
           node --check apps/buienradar/app-service/rain-alert.js
           node --test apps/buienradar/tests/*.test.mjs
-      - name: Build Zepp mini program with last verified radar animation
+      - name: Bundle static Belgium map and build Zepp mini program
         run: |
           python -m pip install --quiet requests pillow
-          python apps/buienradar/tools/probe_direct_radar.py
-          python apps/buienradar/tools/bundle_radar.py
+          python apps/buienradar/tools/bundle_forecast_map.py
           node apps/buienradar/prepare-assets.mjs
           python apps/buienradar/tools/generate_branding.py
           (cd apps/buienradar && ../../zeus-cli/node_modules/.bin/zeus build)
