@@ -198,7 +198,7 @@ AppSideService(BaseSideService({
    }
    if(req.method==='radar.start'){res(null,beginRadar(this));return;}
    if(req.method==='radar.status'){
-    res(null,{ok:true,source:'Buienradar',mode:'current',...radarState,busy:radarBusy});return;
+    res(null,{ok:true,source:'Buienradar',mode:'current+forecast',...radarState,busy:radarBusy});return;
    }
    if(req.method==='rain.forecast'){
     const loc=req.params&&req.params.gps?
