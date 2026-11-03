@@ -226,7 +226,9 @@ Page(BasePage({
     const id=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
     if(handled[id])return;
     const entry={file,done:false,load:()=>{
-     if(this.disposed||!file.filePath)return;
+     // Transfer state can become "transferred" before the destination
+     // filePath is available. Retry on the next FILE event.
+     if(this.disposed||!file.filePath)return false;
      const stamp=Date.parse(file.params.generatedAt);
      if(!Number.isFinite(stamp)||stamp>Date.now()+60000||
          Date.now()-stamp>35*60000)return;
@@ -241,9 +243,9 @@ Page(BasePage({
       this.saveRadarCache();
       this.applyRadarFrame();
       this.updateRadarLabel();
-      return;
+      return true;
      }
-     if(this.radarStamp!==file.params.generatedAt)return;
+     if(this.radarStamp!==file.params.generatedAt)return false;
      this.liveFrames[index]=file.filePath;
      const ready=this.liveFrames.filter(Boolean).length;
      // Never switch to an incomplete download by replacing the existing frames.
@@ -262,12 +264,15 @@ Page(BasePage({
      if(this.pendingFrame&&this.pendingFrame.index===index){
       this.pendingFrame.resolve();this.pendingFrame=null;
      }
+     return true;
     }};
     handled[id]=entry;
-    if(file.readyState==='transferred'){entry.load();entry.done=true;return;}
+    if(file.readyState==='transferred'){
+     entry.done=entry.load();return;
+    }
     if(typeof file.on==='function')file.on('change',event=>{
      const state=event&&event.data&&event.data.readyState||file.readyState;
-     if(state==='transferred'){entry.load();entry.done=true;}
+     if(state==='transferred')entry.done=entry.load();
      else if(state==='error'||state==='canceled'){
       if(this.pendingFrame&&this.pendingFrame.index===index){
        this.pendingFrame.reject(Error('BLE ontvangst mislukt'));this.pendingFrame=null;
@@ -278,7 +283,7 @@ Page(BasePage({
    const sweep=()=>{
     for(const entry of Object.values(handled))
      if(!entry.done&&entry.file.readyState==='transferred'){
-      entry.load();entry.done=true;
+      entry.done=entry.load();
      }
    };
    inbox.on('NEWFILE',()=>{handle();sweep();});
