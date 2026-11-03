@@ -2,31 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-
-function create({download=true,convert=true,transfer=true}={}){
- let service,sourceUrl='',count=0;
- const future=Date.now()+20*60000,validTime=new Date(future).toISOString();
- const data={animation:[{sequence:[0,1,2,3].map((_,i)=>({
-  time:new Date(future+i*600000).toISOString(),
-  uri:'https://app.meteo.be/services/appv4/?s=getIncaImage&i='+i
- }))}]};
- const fetch=async({url})=>({status:200,body:data});
- const downloader={downloadFile({url}){
+function create({download=true,transfer=true}={}){
+ let service,sourceUrl='',count=0,conversionCalls=0;
+ const fetch=async()=>({status:200,body:'000|12:00\n'.repeat(24)});
+ const downloader={downloadFile({url,filePath}){
   sourceUrl=url;
+  assert.match(filePath,/\.gif$/);
   const task={onSuccess:null,onFail:null,cancel(){}};
   queueMicrotask(()=>{
-   if(download)task.onSuccess?.({statusCode:200,filePath:'data://download/future.png'});
+   if(download)task.onSuccess?.({statusCode:200,filePath});
    else task.onFail?.({message:'no data'});
   });
   return task;
  }};
- const image={convert:async()=>convert?
-  {targetFilePath:'data://download/future.img'}:
-  Promise.reject(Error('unsupported'))};
- const transferFile={getOutbox(){return {enqueueFile(_path,params){
-  assert.equal(params.kind,'future-radar-frame');
-  assert.equal(params.source,'KMI');
-  assert.ok(params.validAt>Date.now());
+ const transferFile={getOutbox(){return {enqueueFile(path,params){
+  assert.match(path,/\.gif$/);
+  assert.equal(params.kind,'buienradar-forecast-gif');
+  assert.equal(params.source,'Buienradar');
+  assert.equal(params.horizonMinutes,180);
   count++;
   return {readyState:'pending',on(event,cb){
    if(event==='change')queueMicrotask(()=>cb({
@@ -38,80 +31,56 @@ function create({download=true,convert=true,transfer=true}={}){
   .replace(/^import .*;\s*$/gm,'');
  vm.runInNewContext(source,{
   AppSideService:x=>service=x,BaseSideService:x=>x,
-  parseRaintext:()=>[],describe:()=>({}),normalLocation:x=>x,
+  parseRaintext:()=>Array.from({length:24},(_,i)=>({mmh:0,time:'12:00'})),
+  describe:()=>({state:'dry',totalMm:0}),normalLocation:x=>x,
   REFRESH_MS:300000,nearestStation:()=>null,nextHourRain:()=>0,
-  kmiForecastUrl:()=> 'https://app.meteo.be/services/appv4/?s=getForecasts',
-  parseFutureFrames:()=>data.animation[0].sequence.map(x=>({
-   time:x.time,uri:x.uri,validAt:Date.parse(x.time)
-  })),
-  settings:{settingsStorage:{getItem:()=>null}},
-  fetch,network:{downloader},image,transferFile,
-  Date,Math,Number,String,JSON,Promise,Error,Array,
+  settings:{settingsStorage:{getItem:()=>null,setItem(){}}},
+  fetch,network:{downloader},image:{convert(){conversionCalls++;throw Error('unexpected');}},
+  transferFile,Date,Math,Number,String,JSON,Promise,Error,Array,
   setTimeout,clearTimeout,console:{log(){}}
  });
  const call=(method,params={})=>new Promise(resolve=>
   service.onRequest({method,params},(_,answer)=>resolve(answer)));
- return {call,sourceUrl:()=>sourceUrl,count:()=>count};
+ return {call,count:()=>count,url:()=>sourceUrl,conversionCalls:()=>conversionCalls};
 }
 const settle=async()=>{
- for(let i=0;i<20;i++)await Promise.resolve();
- await new Promise(resolve=>setTimeout(resolve,15));
+ for(let i=0;i<30;i++)await Promise.resolve();
+ await new Promise(resolve=>setTimeout(resolve,20));
 };
-test('Phone retrieves future-verified KMI PNG forecast metadata directly',async()=>{
- const s=create(),r=await s.call('radar.forecast');
- assert.equal(r.ok,true);
- assert.equal(r.source,'KMI');
- assert.equal(r.frameCount,4);
- assert.ok(r.frames.every(f=>f.validAt>Date.now()));
-});
-test('Forecast frame is converted and sent by BLE without GitHub',async()=>{
- const s=create();await s.call('radar.forecast');
- assert.equal((await s.call('radar.frame',{index:0})).ok,true);
+test('Downloads ONLY official Buienradar Belgium future animation (not KMI)',async()=>{
+ const c=create();
+ assert.equal((await c.call('radar.start')).ok,true);
  await settle();
- assert.match(s.sourceUrl(),/^https:\/\/app\.meteo\.be\/services\/appv4\//);
- assert.equal((await s.call('radar.status')).stage,'transferred');
- assert.equal(s.count(),1);
+ assert.match(c.url(),/^https:\/\/image\.buienradar\.nl\/2\.0\/image\/animation\//);
+ assert.match(c.url(),/RadarMapRainWebmercatorBE/);
+ assert.match(c.url(),/History=0&Forecast=19/);
+ assert.equal(c.count(),1);
+ assert.equal(c.conversionCalls(),0);
+ assert.equal((await c.call('radar.status')).stage,'transferred');
 });
-test('Failed download never transfers a nonexistent future frame',async()=>{
- const s=create({download:false});await s.call('radar.forecast');
- await s.call('radar.frame',{index:0});await settle();
- const r=await s.call('radar.status');
- assert.equal(r.stage,'failed');assert.match(r.error,/DOWNLOAD/);
- assert.equal(s.count(),0);
+test('Downloader and transfer errors are reported rather than claiming success',async()=>{
+ const first=create({download:false});
+ await first.call('radar.start');await settle();
+ assert.equal(first.count(),0);
+ assert.match((await first.call('radar.status')).error,/DOWNLOAD/);
+ const second=create({transfer:false});
+ await second.call('radar.start');await settle();
+ assert.match((await second.call('radar.status')).error,/TRANSFER/);
 });
-test('Failed PNG conversion is reported',async()=>{
- const s=create({convert:false});await s.call('radar.forecast');
- await s.call('radar.frame',{index:0});await settle();
- assert.match((await s.call('radar.status')).error,/unsupported/);
+test('One active transfer at a time prevents overwriting live images',async()=>{
+ const c=create();
+ assert.equal((await c.call('radar.start')).ok,true);
+ assert.equal((await c.call('radar.start')).ok,false);
+ await settle();assert.equal(c.count(),1);
 });
-test('Failed BLE transfer is reported instead of claiming success',async()=>{
- const s=create({transfer:false});await s.call('radar.forecast');
- await s.call('radar.frame',{index:0});await settle();
- assert.match((await s.call('radar.status')).error,/TRANSFER/);
+test('Rain and weather endpoints still work and remain independent of radar',async()=>{
+ const c=create();
+ const r=await c.call('rain.forecast');
+ assert.equal(r.ok,true);
+ assert.equal(r.points.length,24);
+ assert.equal((await c.call('config.get')).ok,true);
 });
-test('No past or unknown frame index may start a transfer',async()=>{
- const s=create();await s.call('radar.forecast');
- assert.equal((await s.call('radar.frame',{index:99})).ok,false);
- assert.equal(s.count(),0);
-});
-test('Source code never uses a GitHub runtime radar cache',()=>{
+test('Never uses runtime GitHub cache or KMI imagery',()=>{
  const src=fs.readFileSync(new URL('../app-side/index.js',import.meta.url),'utf8');
- assert.ok(!/raw\.githubusercontent\.com|RADAR_CACHE_BASE|radar\.manifest/.test(src));
-});
-
-
-test('Phone compatibility probe fetches the genuine Buienradar GIF, not KMI',async()=>{
- const s=create();
- const response=await s.call('radar.gifTest');
- assert.equal(response.ok,true);
- assert.equal(response.stage,'converted');
- assert.match(s.sourceUrl(),/^https:\/\/image\.buienradar\.nl\/2\.0\/image\/animation\//);
- assert.match(s.sourceUrl(),/History=0&Forecast=19/);
- assert.equal(s.count(),0); // Never treat GIF conversion as actual BLE animation.
-});
-test('GIF conversion error is reported separately from radar forecast',async()=>{
- const s=create({convert:false});
- const answer=await s.call('radar.gifTest');
- assert.equal(answer.ok,false);
- assert.match(answer.error,/unsupported/);
+ assert.ok(!/raw\.githubusercontent\.com|KMI|kmiForecast|app\.meteo\.be/.test(src));
 });
