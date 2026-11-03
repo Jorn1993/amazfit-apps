@@ -54,18 +54,22 @@ test('real current BE map uses the exact proven Zepp converter + BLE chain',asyn
  const x=create();
  assert.equal((await x.call('radar.start')).ok,true);
  await x.settle();
- assert.equal(x.sourceUrls.length,1);
+ assert.equal(x.sourceUrls.length,2);
  assert.match(x.sourceUrls[0].url,/image\/single\/RadarMapRainBE/);
  assert.match(x.sourceUrls[0].url,/width=320&height=320/);
  assert.equal(x.converted.length,1);
- assert.equal(x.sent.length,1);
+ assert.equal(x.sent.length,2);
  assert.match(x.sent[0].path,/_converted$/);
+ assert.match(x.sourceUrls[1].url,/image\/animation\/RadarMapRainWebmercatorBE/);
+ assert.match(x.sourceUrls[1].url,/History=0&Forecast=19/);
+ assert.match(x.sent[1].path,/\.gif$/);
+ assert.equal(x.sent[1].params.kind,'buienradar-forecast-gif');
  assert.equal(x.sent[0].params.kind,'buienradar-current-frame');
  assert.equal(x.sent[0].params.source,'Buienradar');
  const status=await x.call('radar.status');
  assert.equal(status.stage,'transferred');
  assert.equal(status.busy,false);
- assert.equal(status.mode,'current');
+ assert.equal(status.mode,'current+forecast');
  assert.ok(status.lastFetchedAt>0);
 });
 test('request already underway never triggers a second overlapping BLE transfer',async()=>{
@@ -75,7 +79,7 @@ test('request already underway never triggers a second overlapping BLE transfer'
  assert.equal(next.ok,true);
  assert.equal(next.alreadyRunning,true);
  await x.settle();
- assert.equal(x.sent.length,1);
+ assert.equal(x.sent.length,2);
 });
 test('failed download is visible, does not fake success',async()=>{
  const x=create({download:false});
@@ -88,14 +92,15 @@ test('failed download is visible, does not fake success',async()=>{
 test('official converter failure blocks transfer',async()=>{
  const x=create({convert:false});
  await x.call('radar.start');await x.settle();
- assert.equal(x.sent.length,0);
- assert.equal((await x.call('radar.status')).stage,'failed');
- assert.match((await x.call('radar.status')).error,/No native converter/);
+ assert.equal(x.sent.length,1);
+ assert.equal(x.sent[0].params.kind,'buienradar-forecast-gif');
+ assert.equal((await x.call('radar.status')).stage,'transferred');
+ assert.match((await x.call('radar.status')).staticError,/No native converter/);
 });
 test('Bluetooth transfer failure blocks success',async()=>{
  const x=create({transfer:false});
  await x.call('radar.start');await x.settle();
- assert.equal(x.sent.length,1);
+ assert.equal(x.sent.length,2);
  assert.equal((await x.call('radar.status')).stage,'failed');
  assert.match((await x.call('radar.status')).error,/BLUETOOTH/);
 });
@@ -104,11 +109,13 @@ test('rain forecast and weather remain independent from radar',async()=>{
  assert.equal((await x.call('rain.forecast')).ok,true);
  assert.equal((await x.call('config.get')).ok,true);
 });
-test('no undocumented phone fs, no custom TGA or unverified +3h claims',()=>{
+test('real future GIF is sent unmodified, no undocumented side filesystem or custom TGA',()=>{
  const s=fs.readFileSync(new URL('../app-side/index.js',import.meta.url),'utf8');
  assert.match(s,/context\.download\(/);
  assert.match(s,/convertLib\.convert\(/);
  assert.match(s,/context\.sendFile\(/);
  assert.ok(!/\bfs\.readFile\b|\bfs\.writeFile\b|toZeppImage|kmi\.be|githubusercontent/.test(s));
- assert.ok(!s.includes('RadarMapRainWebmercatorBE'));
+ assert.match(s,/RadarMapRainWebmercatorBE/);
+ assert.match(s,/kind:'buienradar-forecast-gif'/);
+ assert.ok(!s.includes('encodeRgbPng'));
 });
