@@ -1,6 +1,8 @@
 import {BaseSideService} from '@zeppos/zml/base-side';
 import {parseRaintext,describe,normalLocation,REFRESH_MS} from './rain.js';
 import {nearestStation,nextHourRain} from './weather.js';
+import {BuienradarGif} from '../page/gif-decoder.js';
+import {encodeRgbPng} from './frame-png.js';
 
 const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
@@ -66,8 +68,10 @@ async function forecast(location){
  rainCache={key,at:now,payload};
  return {...payload,cached:false};
 }
-// Send the actual animated GIF to the watch unmodified. The watch decodes
-// all forecast frames and writes its native image format locally.
+// The original GIF is decoded on the PHONE. Every future frame becomes
+// standards-compliant PNG, converted with the OFFICIAL image.convert API,
+// then transferred to the watch. Homemade Zepp TGA files were visually
+// corrupt on Balance 2 and are never sent again.
 let radarBusy=false,radarTask=null,radarGeneration=0;
 let radarState={stage:'idle',error:null,updatedAt:0,snapshotError:null};
 function radarProgress(stage,error=null){
@@ -149,17 +153,54 @@ async function deliverBuienradarGif(generation){
   }catch(e){
    radarState={...radarState,snapshotError:String(e?.message||e).slice(0,90)};
   }
-  // Then transfer the real future GIF, unmodified, for full watch-side
-  // multi-frame decoding. A failed GIF never discards the current image.
   radarProgress('gif-download');
   const path=await downloadRadarFile(
    BUIENRADAR_GIF+'&fresh='+Math.floor(Date.now()/300000),
    'data://download/buienradar-'+generation+'.gif',35000);
-  radarProgress('gif-transfer');
-  await sendFile(path,{
-   kind:'buienradar-forecast-gif',source:'Buienradar',
-   fetchedAt:Date.now(),horizonMinutes:180,generation
-  });
+  // The Zepp Side Service file system accepts binary ArrayBuffer.
+  // Do not assume the network response body contains GIF data: downloader
+  // writes the source to a file, and fs.readFile reads that local file.
+  if(typeof fs==='undefined'||!fs?.readFile||!fs?.writeFile)
+   throw Error('GIF: Zepp-bestandssysteem niet beschikbaar');
+  radarProgress('gif-read');
+  const source=await limited(fs.readFile(path),20000,'GIF READ');
+  const bytes=source?.data??source?.buffer??source;
+  if(!bytes||(typeof bytes!=='object'))
+   throw Error('GIF: geen binaire data uit telefoonopslag');
+  const gif=new BuienradarGif(bytes);
+  if(gif.width!==320||gif.height!==320)
+   throw Error('GIF: onverwachte Buienradar afmetingen');
+  let index=0,delivered=0;
+  let frame;
+  while((frame=gif.nextFrame())!==null){
+   // All 17 genuine GIF frames are decoded. Transfer nine evenly spaced
+   // forecast timestamps to limit Bluetooth traffic while preserving motion.
+   const select=index===0||index%2===0;
+   if(select){
+    const frameNumber=index;
+    radarProgress('gif-png-'+frameNumber);
+    const pngBytes=encodeRgbPng(frame.width,frame.height,frame.rgb);
+    const framePath='data://download/buienradar-'+generation+
+     '-frame-'+frameNumber+'.png';
+    await limited(fs.writeFile(framePath,pngBytes),20000,'PNG WRITE');
+    if(!image?.convert)throw Error('Zepp image.convert ontbreekt');
+    radarProgress('gif-convert-'+frameNumber);
+    const converted=await limited(image.convert({filePath:framePath}),
+     25000,'GIF-CONVERT');
+    if(!converted?.targetFilePath)
+     throw Error('GIF-CONVERT: geen native afbeelding');
+    radarProgress('gif-transfer-'+frameNumber);
+    await sendFile(converted.targetFilePath,{
+     kind:'buienradar-native-frame',source:'Buienradar',
+     frameIndex:frameNumber,frameCount:9,
+     fetchedAt:Date.now(),horizonMinutes:180,generation
+    });
+    delivered++;
+   }
+   index++;
+  }
+  if(index<3||delivered<2)
+   throw Error('GIF: te weinig toekomstige radarframes');
   radarProgress('transferred');
  }catch(e){
   radarProgress('failed',String(e?.message||e).slice(0,125));
