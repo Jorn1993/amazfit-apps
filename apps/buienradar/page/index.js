@@ -59,6 +59,7 @@ Page(BasePage({
  build(){
   this.disposed=false;this.screen=0;this.loading=false;this.rain=EMPTY;
   this.liveFrames=[];this.radarStamp=null;this.radarSyncing=false;
+  this.radarMode='archive';this.radarError=null;
   this.radarPaths=Array.from({length:6},(_,i)=>'radar-frame-'+i+'.png');
   this.frameIndex=0;this.pendingFrame=null;this.pageViews=[];this.parts=[[],[],[]];
   this.bars=[];this.indicators=[];
@@ -68,11 +69,12 @@ Page(BasePage({
   try{
    const saved=JSON.parse(storage.getItem('buienradar.radar-frames.v1')||'null');
    const time=Date.parse(saved&&saved.generatedAt);
-   if(saved&&Array.isArray(saved.frames)&&saved.frames.length>=3&&
+   if(saved&&Array.isArray(saved.frames)&&saved.frames.length>=1&&
     time>0&&Date.now()-time<45*60000&&
     saved.frames.every(p=>typeof p==='string'&&p.startsWith('data://'))){
     this.radarPaths=saved.frames;
     this.radarStamp=saved.generatedAt;
+    this.radarMode=saved.mode==='snapshot'?'snapshot':'animation';
    }
   }catch(_){}
   // The documented horizontal swiper takes width and count only.
@@ -112,6 +114,8 @@ Page(BasePage({
    x:0,y:0,w:SIZE,h:SIZE,src:this.radarPaths[0],auto_scale:true
   });
   this.city=cityButton(0);
+  this.radarLabel=txt(0,145,88,190,25,'OUDE RADAR',17,C.orange);
+  this.updateRadarLabel();
   // The uncalibrated yellow marker is intentionally NOT drawn: Buienradar's
   // Belgium image API doesn't expose reliable map bounds/projection metadata.
 
@@ -182,10 +186,15 @@ Page(BasePage({
     if(Number.isInteger(current)&&current>=1&&current<=3)
      this.screen=current-1;
    }catch(_){}
-   if(this.screen===0)this.nextRadarFrame();
+   if(this.screen===0){
+    this.updateRadarLabel();
+    this.nextRadarFrame();
+   }
    if(++this.configTick%12===0)this.checkConfig();
   },950);
   this.weatherTimer=setInterval(()=>{void this.refresh();},300000);
+  this.radarTimer=setInterval(()=>{void this.requestRadar();},300000);
+  void this.requestRadar();
   void this.readLocation();
   void this.refresh();
  },
@@ -202,13 +211,30 @@ Page(BasePage({
    const inbox=this.transfer.getInbox(),handled={};
    const handle=()=>{
     const file=inbox.getNextFile();
-    if(!file||!file.params||file.params.kind!=='buienradar-frame')return;
+    if(!file||!file.params||
+       !['buienradar-frame','buienradar-snapshot'].includes(file.params.kind))return;
+    const snapshot=file.params.kind==='buienradar-snapshot';
     const index=Number(file.params.frameIndex);
     if(!Number.isInteger(index)||index<0||index>=12)return;
     const id=String(file.sessionId||file.fileName||file.filePath||'')+':'+index;
     if(handled[id])return;
     const entry={file,done:false,load:()=>{
-     if(this.disposed||!file.filePath||this.radarStamp!==file.params.generatedAt)return;
+     if(this.disposed||!file.filePath)return;
+     const stamp=Date.parse(file.params.generatedAt);
+     if(!Number.isFinite(stamp)||stamp>Date.now()+60000||
+         Date.now()-stamp>35*60000)return;
+     if(snapshot){
+      this.radarStamp=file.params.generatedAt;
+      this.radarMode='snapshot';
+      this.radarPaths=[file.filePath];
+      this.frameIndex=0;
+      this.radarError=null;
+      this.saveRadarCache();
+      this.applyRadarFrame();
+      this.updateRadarLabel();
+      return;
+     }
+     if(this.radarStamp!==file.params.generatedAt)return;
      this.liveFrames[index]=file.filePath;
      const ready=this.liveFrames.filter(Boolean).length;
      // Never switch to an incomplete download by replacing the existing frames.
@@ -217,10 +243,10 @@ Page(BasePage({
       for(const p of this.liveFrames){if(!p)break;contiguous.push(p);}
       if(contiguous.length>=2){
        this.radarPaths=contiguous;
-       // Radar is visually uninterrupted: no overlay status text.
-       try{storage.setItem('buienradar.radar-frames.v1',JSON.stringify({
-        frames:this.radarPaths,generatedAt:this.radarStamp
-       }));}catch(_){}
+       this.radarMode='animation';
+       this.radarError=null;
+       this.saveRadarCache();
+       this.updateRadarLabel();
       }
      }
      if(this.pendingFrame&&this.pendingFrame.index===index){
@@ -249,8 +275,28 @@ Page(BasePage({
    inbox.on('FILE',()=>{sweep();handle();sweep();});
   }catch(_){/* Offline bundled animation remains playable. */}
  },
+ isRadarFresh(){
+  const stamp=Date.parse(this.radarStamp);
+  return Number.isFinite(stamp)&&stamp<=Date.now()+60000&&
+   Date.now()-stamp<35*60000;
+ },
+ updateRadarLabel(){
+  if(!this.radarLabel)return;
+  const recent=this.isRadarFresh();
+  const label=!recent?'VEROUDERDE RADAR':
+   this.radarMode==='snapshot'?'LOSSE OPNAME':
+   this.radarMode==='animation'?'RECENTE ANIMATIE':'VEROUDERDE RADAR';
+  this.radarLabel.setProperty(ui.prop.TEXT,label);
+  this.radarLabel.setProperty(ui.prop.COLOR,recent?C.white:C.orange);
+ },
+ saveRadarCache(){
+  try{storage.setItem('buienradar.radar-frames.v1',JSON.stringify({
+   frames:this.radarPaths,generatedAt:this.radarStamp,mode:this.radarMode
+  }));}catch(_){}
+ },
  nextRadarFrame(){
-  if(this.disposed||!this.radarPaths.length)return;
+  if(this.disposed||!this.radarPaths.length||
+     this.radarMode!=='animation'||!this.isRadarFresh())return;
   this.frameIndex=(this.frameIndex+1)%this.radarPaths.length;
   this.applyRadarFrame();
  },
@@ -281,16 +327,28 @@ Page(BasePage({
   if(this.disposed||this.radarSyncing)return;
   this.radarSyncing=true;
   try{
-   const manifest=await this.phone({method:'radar.manifest'},15000);
-   if(!manifest||manifest.ok!==true||!manifest.frameCount)return;
-   if(manifest.generatedAt===this.radarStamp&&this.radarPaths.length>=3)return;
-   this.radarStamp=manifest.generatedAt;
-   this.liveFrames=new Array(manifest.frameCount).fill(null);
-   // Refresh silently; pre-installed loop remains visible throughout.
-   for(let i=0;i<manifest.frameCount&&!this.disposed;i++)
-    try{await this.downloadSingleFrame(i);}
-    catch(_){break;}
-  }catch(_){}finally{this.radarSyncing=false;}
+   let manifest=null,fresh=false;
+   try{
+    manifest=await this.phone({method:'radar.manifest'},15000);
+    const stamp=Date.parse(manifest&&manifest.generatedAt);
+    fresh=!!(manifest&&manifest.ok===true&&manifest.frameCount>=3&&
+      Number.isFinite(stamp)&&stamp<=Date.now()+60000&&
+      Date.now()-stamp<35*60000);
+   }catch(_){}
+   if(fresh){
+    if(manifest.generatedAt===this.radarStamp&&
+       this.radarMode==='animation'&&this.radarPaths.length>=3)return;
+    this.radarStamp=manifest.generatedAt;
+    this.liveFrames=new Array(manifest.frameCount).fill(null);
+    for(let i=0;i<manifest.frameCount&&!this.disposed;i++){
+     try{await this.downloadSingleFrame(i);}catch(_){break;}
+    }
+    if(this.radarMode==='animation'&&this.isRadarFresh())return;
+   }
+   const result=await this.phone({method:'radar.snapshot'},12000);
+   if(!result||result.ok!==true)throw Error('Nieuwe opname niet beschikbaar');
+  }catch(e){this.radarError=String(e&&e.message||e);}
+  finally{this.radarSyncing=false;this.updateRadarLabel();}
  },
  draw(){
   if(this.disposed)return;
@@ -501,6 +559,7 @@ Page(BasePage({
   try{offDigitalCrown();}catch(_){}
   if(this.frameTimer!==undefined)clearInterval(this.frameTimer);
   if(this.weatherTimer!==undefined)clearInterval(this.weatherTimer);
+  if(this.radarTimer!==undefined)clearInterval(this.radarTimer);
   if(this.pendingFrame)this.pendingFrame.reject(Error('App gesloten'));
   this.pendingFrame=null;
  }
