@@ -64,8 +64,8 @@ function locations(connected=true){
   LocalStorage:class{getItem(k){return memory.get(k);}setItem(k,v){memory.set(k,v);}},
   JSON,Number,String
  });
- page.messaging={request:async req=>connected?
-  {ok:true,location:req.params.location}:{ok:false}};
+ page.request=async req=>connected?
+  {ok:true,location:req.params.location}:{ok:false};
  page.build();return {page,views,memory,routes};
 }
 test('Native location picker gives 12 direct city actions',async()=>{
