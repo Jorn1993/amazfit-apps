@@ -84,6 +84,14 @@ Page(BasePage({
     }
    }
   }catch(_){}
+  try{
+   const old=JSON.parse(storage.getItem('buienradar.current.v1')||'null');
+   if(old?.source==='Buienradar'&&old.path?.startsWith('data://')&&
+      Date.now()>=old.fetchedAt&&Date.now()-old.fetchedAt<12*60000){
+    this.currentFrame={path:old.path};
+    this.currentFetchedAt=old.fetchedAt;
+   }
+  }catch(_){}
 
   // The documented horizontal swiper takes width and count only.
   // The active (1-based) page is read from getSwiperIndex().
@@ -250,6 +258,9 @@ Page(BasePage({
      if(kind==='buienradar-current-frame'){
       this.currentFrame={path:rec.file.filePath};
       this.currentFetchedAt=fetchedAt;
+      try{storage.setItem('buienradar.current.v1',JSON.stringify({
+       source:'Buienradar',path:rec.file.filePath,fetchedAt
+      }));}catch(_){}
       this.applyRadarFrame();
       this.updateRadarLabel();
      }else{
