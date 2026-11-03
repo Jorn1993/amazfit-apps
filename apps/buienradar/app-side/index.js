@@ -10,6 +10,9 @@ const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
 const BUIENRADAR_GIF='https://image.buienradar.nl/2.0/image/animation/'+
  'RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True'+
  '&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1';
+const BUIENRADAR_CURRENT='https://image.buienradar.nl/2.0/image/single/'+
+ 'RadarMapRainBE?width=480&height=480&renderBackground=True'+
+ '&renderBranding=False&renderText=False';
 
 let rainCache=null,weatherCache=null;
 function responseBody(result){
@@ -66,9 +69,9 @@ async function forecast(location){
 // Send the actual animated GIF to the watch unmodified. The watch decodes
 // all forecast frames and writes its native image format locally.
 let radarBusy=false,radarTask=null,radarGeneration=0;
-let radarState={stage:'idle',error:null,updatedAt:0};
+let radarState={stage:'idle',error:null,updatedAt:0,snapshotError:null};
 function radarProgress(stage,error=null){
- radarState={stage,error,updatedAt:Date.now()};
+ radarState={...radarState,stage,error,updatedAt:Date.now()};
 }
 function limited(job,ms,step,cancel){
  return new Promise((resolve,reject)=>{
@@ -85,15 +88,13 @@ function limited(job,ms,step,cancel){
   });
  });
 }
-function downloadGif(generation){
+function downloadRadarFile(uri,filePath,timeout=28000){
  return limited(new Promise((resolve,reject)=>{
   if(!network?.downloader?.downloadFile)
    return reject(Error('DOWNLOAD: niet beschikbaar'));
   try{
    radarTask=network.downloader.downloadFile({
-    url:BUIENRADAR_GIF+'&fresh='+Math.floor(Date.now()/300000),
-    filePath:'data://download/buienradar-'+generation+'.gif',
-    timeout:25000
+    url:uri,filePath,timeout
    });
    radarTask.onSuccess=ev=>{
     if(Number(ev?.statusCode)!==200)
@@ -104,7 +105,7 @@ function downloadGif(generation){
    };
    radarTask.onFail=ev=>reject(Error('DOWNLOAD: '+(ev?.message||'netwerk')));
   }catch(e){reject(Error('DOWNLOAD: '+String(e.message||e)));}
- }),30000,'DOWNLOAD',()=>{try{radarTask?.cancel?.();}catch(_){}});
+ }),timeout+5000,'DOWNLOAD',()=>{try{radarTask?.cancel?.();}catch(_){}});
 }
 function awaitTransfer(task){
  return limited(new Promise((resolve,reject)=>{
@@ -119,19 +120,46 @@ function awaitTransfer(task){
   check(task.readyState);
  }),65000,'TRANSFER',()=>{try{task?.cancel?.();}catch(_){}});
 }
+async function sendFile(path,params){
+ const outbox=transferFile?.getOutbox?.();
+ if(!outbox?.enqueueFile)throw Error('TRANSFER: Zepp outbox ontbreekt');
+ const task=outbox.enqueueFile(path,params);
+ await awaitTransfer(task);
+}
 async function deliverBuienradarGif(generation){
  try{
-  radarProgress('download');
-  const path=await downloadGif(generation);
-  const fetchedAt=Date.now();
-  radarProgress('transfer');
-  const outbox=transferFile?.getOutbox?.();
-  if(!outbox?.enqueueFile)throw Error('TRANSFER: Zepp outbox ontbreekt');
-  const task=outbox.enqueueFile(path,{
+  // First render something genuine on the watch. This is the *current*
+  // Buienradar observation image, never mislabelled as forecast.
+  try{
+   radarProgress('snapshot-download');
+   const png=await downloadRadarFile(
+    BUIENRADAR_CURRENT+'&fresh='+Math.floor(Date.now()/300000),
+    'data://download/buienradar-current-'+generation+'.png');
+   if(!image?.convert)throw Error('CONVERT: niet beschikbaar');
+   radarProgress('snapshot-convert');
+   const native=await limited(image.convert({
+    filePath:png,targetFilePath:'data://download/buienradar-current-'+generation+'.img'
+   }),22000,'CONVERT');
+   if(!native?.targetFilePath)throw Error('CONVERT: geen afbeelding');
+   radarProgress('snapshot-transfer');
+   await sendFile(native.targetFilePath,{
+    kind:'buienradar-current-frame',source:'Buienradar',fetchedAt:Date.now(),
+    generation
+   });
+  }catch(e){
+   radarState={...radarState,snapshotError:String(e?.message||e).slice(0,90)};
+  }
+  // Then transfer the real future GIF, unmodified, for full watch-side
+  // multi-frame decoding. A failed GIF never discards the current image.
+  radarProgress('gif-download');
+  const path=await downloadRadarFile(
+   BUIENRADAR_GIF+'&fresh='+Math.floor(Date.now()/300000),
+   'data://download/buienradar-'+generation+'.gif',35000);
+  radarProgress('gif-transfer');
+  await sendFile(path,{
    kind:'buienradar-forecast-gif',source:'Buienradar',
-   fetchedAt,horizonMinutes:180,generation
+   fetchedAt:Date.now(),horizonMinutes:180,generation
   });
-  await awaitTransfer(task);
   radarProgress('transferred');
  }catch(e){
   radarProgress('failed',String(e?.message||e).slice(0,125));
