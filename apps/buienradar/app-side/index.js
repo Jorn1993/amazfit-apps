@@ -1,15 +1,14 @@
 import {BaseSideService} from '@zeppos/zml/base-side';
 import {parseRaintext,describe,normalLocation,REFRESH_MS} from './rain.js';
 import {nearestStation,nextHourRain} from './weather.js';
-import {kmiForecastUrl,parseFutureFrames} from './future-radar.js';
 
 const ENDPOINTS=['https://gpsgadget.buienradar.nl/data/raintext/',
  'https://gps.buienradar.nl/getrr.php'];
 const WEATHER_FEED='https://data.buienradar.nl/2.0/feed/json';
-// Genuine Buienradar Belgium +3h GIF: a *format compatibility probe* only.
-// The KMI radar implementation remains untouched until actual frame decoding works.
+// Only Buienradar's Belgian precipitation forecast: current and future,
+// no historical frames and no KMI or GitHub runtime dependency.
 const BUIENRADAR_GIF='https://image.buienradar.nl/2.0/image/animation/'+
- 'RadarMapRainWebmercatorBE?height=240&width=240&renderBackground=True'+
+ 'RadarMapRainWebmercatorBE?height=320&width=320&renderBackground=True'+
  '&renderBranding=False&renderText=True&History=0&Forecast=19&skip=1';
 
 let rainCache=null,weatherCache=null;
@@ -64,11 +63,12 @@ async function forecast(location){
  rainCache={key,at:now,payload};
  return {...payload,cached:false};
 }
-// A current, timestamped *future* precipitation map. No GitHub cache.
-let radarFrames=[],radarBusy=false,radarTask=null,radarGeneration=0;
-let radarState={stage:'idle',error:null,updatedAt:0,index:-1};
-function radarProgress(stage,error=null,index=radarState.index){
- radarState={stage,error,index,updatedAt:Date.now()};
+// Send the actual animated GIF to the watch unmodified. The watch decodes
+// all forecast frames and writes its native image format locally.
+let radarBusy=false,radarTask=null,radarGeneration=0;
+let radarState={stage:'idle',error:null,updatedAt:0};
+function radarProgress(stage,error=null){
+ radarState={stage,error,updatedAt:Date.now()};
 }
 function limited(job,ms,step,cancel){
  return new Promise((resolve,reject)=>{
@@ -85,42 +85,31 @@ function limited(job,ms,step,cancel){
   });
  });
 }
-async function loadFutureForecast(){
- if(radarBusy)throw Error('RADAR: bezig met vorige overdracht');
- const location=selectedLocation();
- const response=await fetch({url:kmiForecastUrl(location),method:'GET'});
- if(resultStatus(response)!==200)throw Error('KMI: HTTP '+resultStatus(response));
- const frames=parseFutureFrames(response.body);
- radarFrames=frames;
- return {ok:true,source:'KMI',forecast:true,
-  fetchedAt:Date.now(),
-  frames:frames.map((f,index)=>({index,time:f.time,validAt:f.validAt})),
-  frameCount:frames.length};
-}
-function downloadRadar(uri,index,id){
+function downloadGif(generation){
  return limited(new Promise((resolve,reject)=>{
   if(!network?.downloader?.downloadFile)
-   return reject(Error('DOWNLOAD: niet ondersteund'));
+   return reject(Error('DOWNLOAD: niet beschikbaar'));
   try{
    radarTask=network.downloader.downloadFile({
-    url:uri,filePath:'data://download/kmi-future-'+id+'-'+index+'.png',
-    timeout:18000
+    url:BUIENRADAR_GIF+'&fresh='+Math.floor(Date.now()/300000),
+    filePath:'data://download/buienradar-'+generation+'.gif',
+    timeout:25000
    });
    radarTask.onSuccess=ev=>{
     if(Number(ev?.statusCode)!==200)
      reject(Error('DOWNLOAD: HTTP '+ev?.statusCode));
     else if(!ev.filePath&&!ev.tempFilePath)
-     reject(Error('DOWNLOAD: ontbrekend bestand'));
+     reject(Error('DOWNLOAD: bestand ontbreekt'));
     else resolve(ev.filePath||ev.tempFilePath);
    };
    radarTask.onFail=ev=>reject(Error('DOWNLOAD: '+(ev?.message||'netwerk')));
   }catch(e){reject(Error('DOWNLOAD: '+String(e.message||e)));}
- }),22000,'DOWNLOAD',()=>{try{radarTask?.cancel?.();}catch(_){}});
+ }),30000,'DOWNLOAD',()=>{try{radarTask?.cancel?.();}catch(_){}});
 }
 function awaitTransfer(task){
  return limited(new Promise((resolve,reject)=>{
   if(!task||typeof task.on!=='function')
-   return reject(Error('TRANSFER: onbekende taak'));
+   return reject(Error('TRANSFER: geen taak'));
   const check=state=>{
    if(state==='transferred')resolve();
    else if(state==='error'||state==='canceled')
@@ -128,45 +117,34 @@ function awaitTransfer(task){
   };
   task.on('change',event=>check(event?.data?.readyState||task.readyState));
   check(task.readyState);
- }),38000,'TRANSFER',()=>{try{task?.cancel?.();}catch(_){}});
+ }),65000,'TRANSFER',()=>{try{task?.cancel?.();}catch(_){}});
 }
-async function transferFutureFrame(index,generation){
+async function deliverBuienradarGif(generation){
  try{
-  const frame=radarFrames[index];
-  if(!frame||frame.validAt<=Date.now())
-   throw Error('RADAR: frame is niet meer in de toekomst');
-  radarProgress('download',null,index);
-  const input=await downloadRadar(frame.uri,index,generation);
-  radarProgress('convert',null,index);
-  if(!image?.convert)throw Error('CONVERT: niet ondersteund');
-  const output=await limited(image.convert({filePath:input}),15000,'CONVERT');
-  if(!output?.targetFilePath)throw Error('CONVERT: geen afbeelding');
-  radarProgress('transfer',null,index);
+  radarProgress('download');
+  const path=await downloadGif(generation);
+  const fetchedAt=Date.now();
+  radarProgress('transfer');
   const outbox=transferFile?.getOutbox?.();
-  if(!outbox?.enqueueFile)throw Error('TRANSFER: geen Zepp outbox');
-  const task=outbox.enqueueFile(output.targetFilePath,{
-   kind:'future-radar-frame',source:'KMI',frameIndex:index,
-   validTime:frame.time,validAt:frame.validAt,
-   fetchedAt:Date.now(),generation
+  if(!outbox?.enqueueFile)throw Error('TRANSFER: Zepp outbox ontbreekt');
+  const task=outbox.enqueueFile(path,{
+   kind:'buienradar-forecast-gif',source:'Buienradar',
+   fetchedAt,horizonMinutes:180,generation
   });
   await awaitTransfer(task);
-  radarProgress('transferred',null,index);
+  radarProgress('transferred');
  }catch(e){
-  radarProgress('failed',String(e.message||e).slice(0,110),index);
+  radarProgress('failed',String(e?.message||e).slice(0,125));
  }finally{radarBusy=false;radarTask=null;}
 }
-function beginForecastFrame(index){
- if(radarBusy)return {ok:false,busy:true,error:'RADAR: overdracht bezig'};
- const frame=radarFrames[index];
- if(!Number.isInteger(index)||!frame||frame.validAt<=Date.now())
-  return {ok:false,error:'RADAR: ongeldig of verlopen toekomstframe'};
+function beginRadar(){
+ if(radarBusy)return {ok:false,busy:true,error:'Radaroverdracht bezig'};
  radarBusy=true;
  const generation=++radarGeneration;
- radarProgress('starting',null,index);
- void transferFutureFrame(index,generation);
- return {ok:true,index,validTime:frame.time};
+ radarProgress('starting');
+ void deliverBuienradarGif(generation);
+ return {ok:true,source:'Buienradar',horizonMinutes:180,generation};
 }
-
 AppSideService(BaseSideService({
  async onRequest(req,res){
   try{
@@ -180,41 +158,16 @@ AppSideService(BaseSideService({
     rainCache=null;
     res(null,{ok:true,location:loc});return;
    }
-   if(req.method==='radar.forecast'){
-    try{res(null,await loadFutureForecast());}
-    catch(e){res(null,{ok:false,error:String(e.message||e).slice(0,140)});}
-    return;
-   }
-   if(req.method==='radar.frame'){
-    res(null,beginForecastFrame(Number(req.params?.index)));return;
-   }
+   if(req.method==='radar.start'){res(null,beginRadar());return;}
    if(req.method==='radar.status'){
     res(null,{ok:true,...radarState,busy:radarBusy});return;
    }
-   if(req.method==='radar.gifTest'){
-    // Only the real Zepp phone runtime can answer whether image.convert
-    // accepts an animated GIF. Success here does NOT mean frame animation.
-    if(radarBusy){res(null,{ok:false,error:'Radaroverdracht bezig'});return;}
-    radarBusy=true;
-    try{
-     const input=await downloadRadar(BUIENRADAR_GIF,0,'gif-probe');
-     if(!image?.convert)throw Error('GIF-CONVERT: niet beschikbaar');
-     const converted=await limited(image.convert({filePath:input}),
-      18000,'GIF-CONVERT');
-     if(!converted?.targetFilePath)throw Error('GIF-CONVERT: geen resultaat');
-     res(null,{ok:true,stage:'converted',note:'GIF acceptatie; animatie nog niet bewezen'});
-    }catch(e){
-     res(null,{ok:false,error:String(e.message||e).slice(0,100)});
-    }finally{radarBusy=false;radarTask=null;}
-    return;
+   if(req.method==='rain.forecast'){
+    const loc=req.params&&req.params.gps?
+     normalLocation({...req.params.gps,name:'GPS-locatie'}):selectedLocation();
+    res(null,await forecast(loc));return;
    }
-   if(req.method!=='rain.forecast')
-    throw Error('Unsupported request');
-   const loc=req.params&&req.params.gps?
-    normalLocation({...req.params.gps,name:'GPS-locatie'}):selectedLocation();
-   res(null,await forecast(loc));
-  }catch(_){
-   res(null,{ok:false,error:'Buienradar niet bereikbaar. Probeer opnieuw.'});
-  }
+   throw Error('Onbekende aanvraag: '+req.method);
+  }catch(e){res(null,{ok:false,error:String(e.message||e).slice(0,135)});}
  }
 }));
