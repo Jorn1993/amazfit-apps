@@ -1,0 +1,41 @@
+name: Buienradar source format probe
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/buienradar-source-probe.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet requests pillow
+      - name: Inspect genuine Buienradar BE animation formats and frames
+        run: |
+          python - <<'PY'
+          import io,requests
+          from PIL import Image
+          base='https://image.buienradar.nl/2.0/image/animation/RadarMapRainWebmercatorBE'
+          variants={
+           'future-default':{'height':240,'width':240,'renderBackground':'True','renderBranding':'False','renderText':'True','History':0,'Forecast':19,'skip':1},
+           'future-extension-png':{'height':240,'width':240,'extension':'png','renderBackground':'True','renderBranding':'False','renderText':'True','History':0,'Forecast':19,'skip':1},
+           'future-extension-gif':{'height':240,'width':240,'extension':'gif','renderBackground':'True','renderBranding':'False','renderText':'True','History':0,'Forecast':19,'skip':1},
+           'future-alt-layer':{'height':240,'width':240,'History':0,'Forecast':19}
+          }
+          for label,query in variants.items():
+           try:
+            response=requests.get(base,params=query,timeout=20)
+            print(label,'http',response.status_code,'content-type',response.headers.get('Content-Type'),
+              'bytes',len(response.content),'signature',repr(response.content[:8]))
+            response.raise_for_status()
+            with Image.open(io.BytesIO(response.content)) as image:
+             print(label,'format',image.format,'dimensions',image.size,'frames',getattr(image,'n_frames',1),
+              'duration',image.info.get('duration'))
+           except Exception as e:
+            print(label,'ERROR',str(e)[:300])
+          PY
